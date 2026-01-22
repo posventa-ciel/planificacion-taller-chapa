@@ -2,83 +2,80 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-st.set_page_config(page_title="Planificación Taller Chapa", layout="wide")
-
-st.title("🚗 Gestión de Turnos y Programación - Taller de Chapa")
+st.set_page_config(page_title="Gestión de Taller - Autociel", layout="wide")
 
 url = "https://docs.google.com/spreadsheets/d/1HeZ4LyRHndRE3OiBAUjpVVk3j6GBXy7qzi5QVby6RWw/edit#gid=609774337"
-
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+@st.cache_data(ttl=300)
+def cargar_datos():
+    # Pestañas a consolidar
+    pestanas = ["GRUPO UNO", "GRUPO DOS", "GRUPO 3", "TERCEROS"]
+    lista_dfs = []
+    for p in pestanas:
+        try:
+            df_p = conn.read(spreadsheet=url, worksheet=p)
+            df_p.columns = df_p.columns.str.strip()
+            df_p['GRUPO_ORIGEN'] = p
+            lista_dfs.append(df_p)
+        except Exception as e:
+            st.error(f"Error en pestaña {p}: {e}")
+    return pd.concat(lista_dfs, ignore_index=True)
+
 try:
-    # Leemos el sheet
-    df = conn.read(spreadsheet=url)
-    df.columns = df.columns.str.strip() # Limpiamos espacios
-
-    # Mapeo de columnas según lo que detectamos
-    col_patente = "PATENTE"
-    col_vehiculo = "VEHICULO"
-    col_asesor = "ASESOR"
-    col_estado = "REFERENCIA" # Usamos REFERENCIA o alguna otra como estado provisional
-    col_promesa = "FECH/PROM"
-
-    # Limpieza básica
-    df = df.dropna(subset=[col_patente])
-
-    # --- INTERFAZ DE USUARIO ---
+    df_raw = cargar_datos()
+    # Limpieza: quitamos filas sin patente y convertimos PRECIO a número
+    df = df_raw.dropna(subset=['PATENTE']).copy()
+    df['PRECIO'] = pd.to_numeric(df['PRECIO'], errors='coerce').fillna(0)
     
-    tab1, tab2 = st.tabs(["📋 Vista General", "🛠️ Programación Jefe de Taller"])
+    # --- LÓGICA DE ESTADOS (Columna FAC) ---
+    # FAC: Ya facturado
+    # SI: Facturable este mes
+    # NO: Facturable mes próximo
+    
+    facturado = df[df['FAC'] == 'FAC']
+    proyectado_mes = df[df['FAC'] == 'SI']
+    proyectado_prox_mes = df[df['FAC'] == 'NO']
 
-    with tab1:
-        st.subheader("Estado Actual del Taller")
+    st.title("📊 Control de Producción y Facturación")
+
+    # --- MÉTRICAS FINANCIERAS ---
+    c1, c2, c3 = st.columns(3)
+    
+    with c1:
+        st.metric("Ya Facturado (FAC)", f"$ {facturado['PRECIO'].sum():,.0f}")
+        st.caption(f"Unidades: {len(facturado)}")
         
-        # Filtros
-        c1, c2 = st.columns(2)
-        with c1:
-            filtro_asesor = st.multiselect("Filtrar por Asesor", options=df[col_asesor].unique())
-        with c2:
-            search = st.text_input("Buscar por Patente o Modelo")
+    with c2:
+        st.subheader("Mes en Curso (SI)")
+        st.metric("A Facturar", f"$ {proyectado_mes['PRECIO'].sum():,.0f}", delta="Pendiente")
+        st.caption(f"Unidades: {len(proyectado_mes)}")
 
-        # Aplicar filtros
-        df_display = df.copy()
-        if filtro_asesor:
-            df_display = df_display[df_display[col_asesor].isin(filtro_asesor)]
-        if search:
-            df_display = df_display[df_display[col_patente].str.contains(search, case=False, na=False) | 
-                                    df_display[col_vehiculo].str.contains(search, case=False, na=False)]
+    with c3:
+        st.subheader("Próximo Mes (NO)")
+        st.metric("Proyectado", f"$ {proyectado_prox_mes['PRECIO'].sum():,.0f}")
+        st.caption(f"Unidades: {len(proyectado_prox_mes)}")
 
-        st.dataframe(df_display[[col_patente, col_vehiculo, col_asesor, col_promesa, "PAÑOS", "OBSERVACIONES"]], use_container_width=True)
+    st.divider()
 
-    with tab2:
-        st.subheader("Asignación de Tiempos y Grupos")
-        st.write("Seleccioná un vehículo para programar su trabajo en el Gantt.")
-        
-        # Selector de vehículo para editar
-        patente_sel = st.selectbox("Seleccionar Vehículo por Patente", options=df[col_patente].unique())
-        
-        if patente_sel:
-            datos_auto = df[df[col_patente] == patente_sel].iloc[0]
-            
-            st.info(f"Programando: {datos_auto[col_vehiculo]} - Asesor: {datos_auto[col_asesor]}")
-            
-            with st.form("form_programacion"):
-                col_f1, col_f2 = st.columns(2)
-                
-                with col_f1:
-                    grupo = st.radio("Asignar a Grupo:", ["Grupo A", "Grupo B"], horizontal=True)
-                    dias_chapa = st.number_input("Días de Chapa (Estimado)", min_value=0.0, step=0.5, value=1.0)
-                
-                with col_f2:
-                    dias_prep = st.number_input("Días de Preparación", min_value=0.0, step=0.5, value=1.0)
-                    dias_pinto = st.number_input("Días de Pintura", min_value=0.0, step=0.5, value=1.0)
-                
-                comentario = st.text_area("Notas para los técnicos")
-                
-                btn_guardar = st.form_submit_button("Actualizar Programación")
-                
-                if btn_guardar:
-                    st.success(f"¡Datos guardados! (Simulado) - Total días: {dias_chapa + dias_prep + dias_pinto}")
-                    # Aquí es donde luego programaremos que escriba en el Sheet o en una base de datos local
+    # --- VISTA PARA EL GANTT (LO QUE NO ESTÁ FACTURADO AÚN) ---
+    st.subheader("📅 Programación de Trabajos Pendientes (SI / NO)")
+    
+    # Filtramos lo que requiere programación (lo que no se facturó todavía)
+    df_pendientes = df[df['FAC'].isin(['SI', 'NO'])].copy()
+    
+    # Ordenamos por fecha de promesa para ver qué urge más
+    if 'FECH/PROM' in df_pendientes.columns:
+        df_pendientes = df_pendientes.sort_values(by='FECH/PROM')
+
+    # Filtro por Grupo para el Jefe de Taller
+    grupo_sel = st.multiselect("Filtrar por Grupo/Taller:", options=df_pendientes['GRUPO_ORIGEN'].unique(), default=df_pendientes['GRUPO_ORIGEN'].unique())
+    df_filtrado = df_pendientes[df_pendientes['GRUPO_ORIGEN'].isin(grupo_sel)]
+
+    st.dataframe(
+        df_filtrado[['GRUPO_ORIGEN', 'PATENTE', 'VEHICULO', 'PAÑOS', 'FECH/PROM', 'FAC', 'ASESOR', 'OBSERVACIONES']],
+        use_container_width=True
+    )
 
 except Exception as e:
-    st.error(f"Error al cargar datos: {e}")
+    st.error(f"Hubo un problema al procesar los datos: {e}")
