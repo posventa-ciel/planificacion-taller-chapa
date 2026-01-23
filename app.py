@@ -64,7 +64,7 @@ try:
         df.loc[df['PAÑOS_FLOAT'] < 1, 'PAÑOS_FLOAT'] = 1
 
         # --- CÁLCULO DE FECHAS "A PRUEBA DE BALAS" ---
-        # Usamos listas de Python en lugar de Pandas Series para evitar el error de "Integer Array"
+        # Usamos bucles de Python puro para evitar conflictos de versiones de Pandas
         
         fechas_fin = []
         fechas_inicio = []
@@ -78,7 +78,10 @@ try:
             
             # B. Calcular Inicio (Restar timedelta)
             # Aquí usamos timedelta de Python puro, que nunca falla con floats
-            inicio = fin - timedelta(days=float(paños))
+            try:
+                inicio = fin - timedelta(days=float(paños))
+            except:
+                inicio = fin # Si falla por algo raro, inicio = fin
             
             fechas_fin.append(fin)
             fechas_inicio.append(inicio)
@@ -104,14 +107,14 @@ try:
         # Filtramos solo lo pendiente
         df_gantt = df[df['FAC'].isin(['SI', 'NO'])].copy()
         
-        # Filtro por Grupo
+        # Filtro por Grupo (CORREGIDO AQUÍ)
         grupos = df_gantt['GRUPO_ORIGEN'].unique().tolist()
-        sel_grupos = st.multiselect("Filtrar Grupos:", groups, default=grupos)
+        sel_grupos = st.multiselect("Filtrar Grupos:", grupos, default=grupos)
         df_gantt = df_gantt[df_gantt['GRUPO_ORIGEN'].isin(sel_grupos)]
 
         if not df_gantt.empty:
             # ID para el gráfico
-            df_gantt['ID_AUTO'] = df_gantt['PATENTE'].astype(str) + " " + df_gantt['VEHICULO'].astype(str).str[:15]
+            df_gantt['ID_AUTO'] = df_gantt['PATENTE'].astype(str) + " " + df_gantt['VEHICULO'].astype(str).str[:20]
 
             fig = px.timeline(
                 df_gantt, 
