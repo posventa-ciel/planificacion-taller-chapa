@@ -43,24 +43,23 @@ try:
     if not df_raw.empty:
         df = df_raw.copy()
         
-        # --- LIMPIEZA CRÍTICA DE FECHAS ---
-        # Convertimos a fecha, si falla ponemos NaT (Not a Time)
+        # --- LIMPIEZA DE DATOS ---
+        # Convertimos FECH/PROM a datetime de forma segura
         df['FECH/PROM'] = pd.to_datetime(df['FECH/PROM'], dayfirst=True, errors='coerce')
         
-        # Si la fecha está vacía, para el gráfico le asignamos "Hoy" para que aparezca algo
-        df['FECHA_GRAFICO'] = df['FECH/PROM'].fillna(pd.Timestamp(datetime.now()))
+        # Si no hay fecha, usamos HOY como referencia para que el gráfico no falle
+        hoy_dt = pd.Timestamp(datetime.now().date())
+        df['FECHA_FIN_GRAFICO'] = df['FECH/PROM'].fillna(hoy_dt)
 
-        # Limpieza de Paños (si es 0 o texto, ponemos 1 para que la barra tenga ancho)
+        # Limpieza de Paños: asegurar que sea numérico y mínimo 1
         df['PAÑOS'] = pd.to_numeric(df['PAÑOS'], errors='coerce').fillna(1)
-        df.loc[df['PAÑOS'] <= 0, 'PAÑOS'] = 1
-        df['PAÑOS'] = df['PAÑOS'].astype(int)
-
+        df.loc[df['PAÑOS'] < 1, 'PAÑOS'] = 1
+        
         # Limpieza de precios
         df['PRECIO'] = df['PRECIO'].astype(str).str.replace(r'[$.]', '', regex=True).str.replace(',', '.')
         df['PRECIO'] = pd.to_numeric(df['PRECIO'], errors='coerce').fillna(0)
 
         # 1. MÉTRICAS SUPERIORES
-        st.subheader("💰 Resumen de Facturación")
         c1, c2, c3 = st.columns(3)
         c1.metric("Ya Facturado (FAC)", f"$ {df[df['FAC'] == 'FAC']['PRECIO'].sum():,.0f}")
         c2.metric("A Facturar Mes (SI)", f"$ {df[df['FAC'] == 'SI']['PRECIO'].sum():,.0f}")
@@ -75,35 +74,38 @@ try:
         df_gantt = df[df['FAC'].isin(['SI', 'NO'])].copy()
 
         if not df_gantt.empty:
-            # Lógica: Fecha Inicio = Fecha Gráfico - Cantidad de Paños
-            df_gantt['Fecha_Inicio'] = df_gantt.apply(lambda x: x['FECHA_GRAFICO'] - pd.Timedelta(days=x['PAÑOS']), axis=1)
+            # --- CORRECCIÓN DEL ERROR DE OPERANDOS ---
+            # Calculamos Fecha_Inicio restando los días (paños) a la fecha de fin
+            df_gantt['Fecha_Inicio'] = df_gantt['FECHA_FIN_GRAFICO'] - pd.to_timedelta(df_gantt['PAÑOS'], unit='D')
             
-            # Etiqueta visual
-            df_gantt['Detalle'] = df_gantt['PATENTE'].astype(str) + " (" + df_gantt['VEHICULO'].astype(str) + ")"
+            # Etiqueta visual: Dominio y Vehículo
+            df_gantt['ID_AUTO'] = df_gantt['PATENTE'].astype(str) + " - " + df_gantt['VEHICULO'].astype(str)
 
+            # Graficamos: Eje Y es el ID del auto para ver cada uno por separado
             fig = px.timeline(
                 df_gantt, 
                 x_start="Fecha_Inicio", 
-                x_end="FECHA_GRAFICO", 
-                y="GRUPO_ORIGEN", 
-                color="GRUPO_ORIGEN",
-                hover_name="Detalle",
-                text="PATENTE",
-                title="Distribución de Trabajo por Grupo (1 día por paño)"
+                x_end="FECHA_FIN_GRAFICO", 
+                y="ID_AUTO", 
+                color="GRUPO_ORIGEN", # Los colores siguen siendo por Grupo
+                hover_name="ID_AUTO",
+                text="PAÑOS", # Mostramos la cantidad de paños en la barra
+                title="Distribución de Unidades Pendientes (SI/NO)"
             )
             
-            fig.update_yaxes(autorange="reversed")
+            fig.update_yaxes(autorange="reversed", title="Vehículos en Taller")
             fig.update_traces(textposition='inside', insidetextanchor='middle')
             
-            # Línea vertical indicando HOY
-            hoy = datetime.now()
-            fig.add_vline(x=hoy, line_dash="dash", line_color="red", annotation_text="HOY")
+            # Línea vertical de HOY
+            fig.add_vline(x=hoy_dt, line_dash="dash", line_color="red", annotation_text="HOY")
+            
+            fig.update_layout(height=600) # Más alto para ver mejor la lista de autos
             
             st.plotly_chart(fig, use_container_width=True)
             
-            st.caption("⚠️ Nota: Las unidades sin 'Fecha Promesa' en el Sheet se muestran terminando HOY por defecto.")
+            st.caption("ℹ️ El ancho de la barra representa la cantidad de paños (1 día por paño).")
         else:
-            st.info("No hay unidades con estado 'SI' o 'NO' para mostrar.")
+            st.info("No hay unidades pendientes con estado 'SI' o 'NO' para mostrar.")
 
         # 3. TABLA DE DATOS
         with st.expander("Ver listado completo de datos"):
