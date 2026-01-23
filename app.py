@@ -43,11 +43,11 @@ try:
     if not df_raw.empty:
         df = df_raw.copy()
         
-        # --- LIMPIEZA DE DATOS ---
+        # --- LIMPIEZA DE DATOS CRÍTICA ---
         # Convertimos FECH/PROM a fecha de forma segura
         df['FECH/PROM'] = pd.to_datetime(df['FECH/PROM'], dayfirst=True, errors='coerce')
         
-        # Si no hay fecha, usamos HOY como referencia
+        # Referencia para el gráfico: si no tiene fecha promesa, usamos HOY
         hoy_dt = pd.Timestamp(datetime.now().date())
         df['FECHA_FIN_REF'] = df['FECH/PROM'].fillna(hoy_dt)
 
@@ -59,7 +59,7 @@ try:
         df['PRECIO'] = df['PRECIO'].astype(str).str.replace(r'[$.]', '', regex=True).str.replace(',', '.')
         df['PRECIO'] = pd.to_numeric(df['PRECIO'], errors='coerce').fillna(0)
 
-        # 1. MÉTRICAS SUPERIORES
+        # 1. MÉTRICAS SUPERIORES (KPIs)
         c1, c2, c3 = st.columns(3)
         c1.metric("Ya Facturado (FAC)", f"$ {df[df['FAC'] == 'FAC']['PRECIO'].sum():,.0f}")
         c2.metric("A Facturar Mes (SI)", f"$ {df[df['FAC'] == 'SI']['PRECIO'].sum():,.0f}")
@@ -75,43 +75,44 @@ try:
 
         if not df_gantt.empty:
             # --- SOLUCIÓN AL ERROR DE OPERANDOS ---
-            # Usamos pd.to_timedelta para restar los días correctamente
+            # Restamos los días usando pd.to_timedelta para que Python entienda la unidad
             df_gantt['Fecha_Inicio'] = df_gantt['FECHA_FIN_REF'] - pd.to_timedelta(df_gantt['PAÑOS_NUM'], unit='D')
             
             # Etiqueta visual para el eje Y
-            df_gantt['VEHICULO_ID'] = df_gantt['PATENTE'].astype(str) + " - " + df_gantt['VEHICULO'].astype(str)
+            df_gantt['ID_VEHICULO'] = df_gantt['PATENTE'].astype(str) + " - " + df_gantt['VEHICULO'].astype(str)
 
-            # Creamos el Gantt
+            # Creamos el Gantt interactivo
             fig = px.timeline(
                 df_gantt, 
                 x_start="Fecha_Inicio", 
                 x_end="FECHA_FIN_REF", 
-                y="VEHICULO_ID", 
+                y="ID_VEHICULO", 
                 color="GRUPO_ORIGEN",
-                hover_name="VEHICULO_ID",
-                text="PAÑOS",
-                title="Distribución por Unidad (1 día por paño)"
+                hover_name="ID_VEHICULO",
+                text="PAÑOS", # Mostramos la cantidad de paños dentro de la barra
+                title="Distribución de Unidades Pendientes (SI/NO)"
             )
             
-            fig.update_yaxes(autorange="reversed", title="Vehículos en Taller")
+            # Mejoras visuales del gráfico
+            fig.update_yaxes(autorange="reversed", title="Unidades en Taller")
             fig.update_traces(textposition='inside', insidetextanchor='middle')
             
-            # Línea de HOY para ver retrasos
+            # Agregamos la línea roja de HOY para ver retrasos
             fig.add_vline(x=hoy_dt, line_dash="dash", line_color="red", annotation_text="HOY")
             
-            # Ajustar altura según cantidad de autos
-            altura_dinamica = max(400, len(df_gantt) * 30)
-            fig.update_layout(height=altura_dinamica, margin=dict(t=50, b=50, l=0, r=50))
+            # Altura dinámica para que el gráfico crezca si hay muchos autos
+            altura = max(400, len(df_gantt) * 35)
+            fig.update_layout(height=altura, margin=dict(t=50, b=50, l=0, r=50))
             
             st.plotly_chart(fig, use_container_width=True)
             
-            st.caption("ℹ️ El largo de la barra indica la cantidad de paños. Las unidades sin fecha promesa se muestran venciendo HOY.")
+            st.caption("ℹ️ El largo de la barra representa la cantidad de paños (1 día por paño).")
         else:
-            st.info("No hay unidades pendientes (SI/NO) para mostrar en el gráfico.")
+            st.info("No hay unidades pendientes (SI/NO) cargadas para mostrar en el gráfico.")
 
         # 3. TABLA DE DATOS
-        with st.expander("Ver tabla de datos completa"):
+        with st.expander("Ver detalle de la planilla"):
             st.dataframe(df[['GRUPO_ORIGEN', 'PATENTE', 'VEHICULO', 'PAÑOS', 'FECH/PROM', 'FAC', 'ASESOR']], use_container_width=True)
 
 except Exception as e:
-    st.error(f"Se produjo un error: {e}")
+    st.error(f"Se produjo un error técnico: {e}")
