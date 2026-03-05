@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta, date
 import re
+import time
 
 st.set_page_config(page_title="Gestión Taller Autociel", layout="wide")
 st.title("🚀 Sistema de Gestión Autociel")
@@ -27,6 +28,14 @@ MESES_ES = {
 }
 
 ASESORES_LISTA = ["SIN ASIGNAR", "CESAR OLIVA", "JAVIER GUTIERREZ", "ANDREA MARTINS"]
+
+# NUEVO: Lista de clientes desplegable
+CLIENTES_LISTA = [
+    "CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "CIEL USADO",
+    "AUTOSOL", "AUTOSOL SEGURO", "AUTOSOL OKM", "AUTOSOL USADO", 
+    "AUTOLUX", "AUTOLUX SEGURO", "AUTOLUX OKM", "AUTOLUX USADO",
+    "PARTICULAR"
+]
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 def parsear_fecha_español(texto):
@@ -161,9 +170,10 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
 
 # --- BLINDAJE DE MEMORIA ---
-if 'memoria_turnos_v6' not in st.session_state:
-    st.session_state.memoria_turnos_v6 = obtener_turnos()
-    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5']:
+# Pasamos a v7 para asegurar el cambio de Cliente y limpieza de caché
+if 'memoria_turnos_v7' not in st.session_state:
+    st.session_state.memoria_turnos_v7 = obtener_turnos()
+    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5', 'memoria_turnos_v6']:
         if old_key in st.session_state:
             del st.session_state[old_key]
 
@@ -203,7 +213,8 @@ with tab_turnos:
                 c_pat, c_veh, c_cli = st.columns(3)
                 nueva_patente = c_pat.text_input("Patente *")
                 nuevo_vehiculo = c_veh.text_input("Vehículo *")
-                nuevo_cliente = c_cli.text_input("Cliente")
+                # CAMBIO: Selector desplegable para Cliente
+                nuevo_cliente = c_cli.selectbox("Cliente", CLIENTES_LISTA)
                 
                 c_seg, c_pre, c_pan = st.columns(3)
                 nuevo_seguro = c_seg.text_input("Seguro")
@@ -230,7 +241,7 @@ with tab_turnos:
                             'Paños': nuevo_panos,
                             'Observaciones': nueva_obs,
                             'Tiempo_Entrega': nuevo_tiempo,
-                            'Cliente': nuevo_cliente.upper(),
+                            'Cliente': nuevo_cliente, # Toma del desplegable
                             'Seguro': nuevo_seguro.upper(),
                             'Recibido': False,
                             'Fotos': False,
@@ -238,16 +249,17 @@ with tab_turnos:
                             'OR': "",
                             'Eliminar': False
                         }])
-                        st.session_state.memoria_turnos_v6 = pd.concat([st.session_state.memoria_turnos_v6, nuevo_ingreso], ignore_index=True)
+                        st.session_state.memoria_turnos_v7 = pd.concat([st.session_state.memoria_turnos_v7, nuevo_ingreso], ignore_index=True)
                         st.success(f"Ingreso sin turno agregado con éxito.")
+                        time.sleep(0.5) # Pequeña pausa para que se vea el mensaje
                         st.rerun()
                     else:
                         st.error("Por favor completa la Patente y el Vehículo como mínimo.")
 
     st.divider()
 
-    mask = (st.session_state.memoria_turnos_v6['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v6['Fecha'] <= f_fin)
-    df_rango = st.session_state.memoria_turnos_v6[mask].copy()
+    mask = (st.session_state.memoria_turnos_v7['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v7['Fecha'] <= f_fin)
+    df_rango = st.session_state.memoria_turnos_v7[mask].copy()
 
     if df_rango.empty:
         st.info("No hay turnos para las fechas seleccionadas.")
@@ -289,22 +301,34 @@ with tab_turnos:
             
             if st.button("💾 Guardar Cambios"):
                 indices_a_borrar = []
+                advertencia_borrado = False
+                
                 for idx, row in edited_df.iterrows():
-                    if row.get('Eliminar', False):
+                    # CAMBIO LÓGICO: Protección contra borrado de programados
+                    if row.get('Eliminar', False) and row['Tipo'] == '🚶‍♂️ SIN TURNO':
                         indices_a_borrar.append(idx)
                     else:
-                        st.session_state.memoria_turnos_v6.loc[idx, 'Fecha'] = row['Fecha']
-                        st.session_state.memoria_turnos_v6.loc[idx, 'Hora'] = row['Hora']
-                        st.session_state.memoria_turnos_v6.loc[idx, 'Asesor'] = row['Asesor']
-                        st.session_state.memoria_turnos_v6.loc[idx, 'Recibido'] = row['Recibido']
-                        st.session_state.memoria_turnos_v6.loc[idx, 'Fotos'] = row['Fotos']
-                        st.session_state.memoria_turnos_v6.loc[idx, 'OR'] = row['OR']
-                        st.session_state.memoria_turnos_v6.loc[idx, 'Cancelado'] = row['Cancelado']
+                        if row.get('Eliminar', False) and row['Tipo'] != '🚶‍♂️ SIN TURNO':
+                            advertencia_borrado = True
+                            
+                        st.session_state.memoria_turnos_v7.loc[idx, 'Fecha'] = row['Fecha']
+                        st.session_state.memoria_turnos_v7.loc[idx, 'Hora'] = row['Hora']
+                        st.session_state.memoria_turnos_v7.loc[idx, 'Asesor'] = row['Asesor']
+                        st.session_state.memoria_turnos_v7.loc[idx, 'Recibido'] = row['Recibido']
+                        st.session_state.memoria_turnos_v7.loc[idx, 'Fotos'] = row['Fotos']
+                        st.session_state.memoria_turnos_v7.loc[idx, 'OR'] = row['OR']
+                        st.session_state.memoria_turnos_v7.loc[idx, 'Cancelado'] = row['Cancelado']
+                        # Forzamos que vuelva a ser False por seguridad
+                        st.session_state.memoria_turnos_v7.loc[idx, 'Eliminar'] = False 
                 
                 if indices_a_borrar:
-                    st.session_state.memoria_turnos_v6.drop(indices_a_borrar, inplace=True)
-                    
-                st.success("Taller actualizado.")
+                    st.session_state.memoria_turnos_v7.drop(indices_a_borrar, inplace=True)
+                
+                if advertencia_borrado:
+                    st.warning("⚠️ OJO: Los turnos PROGRAMADOS no se pueden borrar. Si el cliente no vino, usa la opción '❌ Cancelar'.")
+                    time.sleep(3) # Da tiempo a que lea el mensaje antes de recargar
+                else:
+                    st.success("Taller actualizado.")
                 st.rerun() 
         else:
             st.success("¡Excelente! No quedan ingresos pendientes para estas fechas.")
@@ -395,6 +419,6 @@ with tab_kpi:
 with st.sidebar:
     if st.button("🔄 Refrescar Datos desde Sheet"):
         st.cache_data.clear()
-        if 'memoria_turnos_v6' in st.session_state:
-            del st.session_state['memoria_turnos_v6']
+        if 'memoria_turnos_v7' in st.session_state:
+            del st.session_state['memoria_turnos_v7']
         st.rerun()
