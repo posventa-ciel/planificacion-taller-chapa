@@ -11,10 +11,10 @@ st.title("🚀 Sistema de Gestión Autociel")
 ID_NUEVO_SHEET = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
 URL_BASE = f"https://docs.google.com/spreadsheets/d/{ID_NUEVO_SHEET}/export?format=csv&gid="
 
-# 🚨 IMPORTANTE: Reemplaza esto con el GID de tu pestaña "TURNOS"
-GID_TURNOS = "PONER_AQUI_GID_TURNOS" 
+# 🚨 GID de la pestaña "TURNOS" corregido
+GID_TURNOS = "109364752" 
 
-GIDS = {109364752#gid=109364752
+GIDS = {
     "GRUPO UNO": "609774337",
     "GRUPO DOS": "1212138688",
     "GRUPO TRES": "527300176",
@@ -49,7 +49,6 @@ def parsear_fecha_español(texto):
 def obtener_turnos():
     """Lee la pestaña de turnos del sheet"""
     if GID_TURNOS == "PONER_AQUI_GID_TURNOS":
-        # Devuelve un DF vacío con la estructura si no han puesto el GID
         return pd.DataFrame(columns=['Fecha', 'Patente', 'Vehiculo', 'Asesor', 'Recibido', 'Fotos', 'OR'])
         
     url = f"{URL_BASE}{GID_TURNOS}"
@@ -59,17 +58,15 @@ def obtener_turnos():
         
         filas = []
         for _, row in d.iterrows():
-            # Intentar buscar columnas parecidas
             col_fecha = next((c for c in d.columns if 'FECH' in c), None)
             fecha_turno = parsear_fecha_español(row.get(col_fecha, ''))
             
-            # Limpieza de Asesor
             asesor_raw = str(row.get('ASESOR', 'SIN ASIGNAR')).strip().upper()
             if asesor_raw not in ASESORES_LISTA:
                 asesor_raw = "SIN ASIGNAR"
                 
             filas.append({
-                'Fecha': fecha_turno.date(), # Guardamos solo la fecha (sin hora)
+                'Fecha': fecha_turno.date(), 
                 'Patente': str(row.get('PATENTE', '')).upper(),
                 'Vehiculo': str(row.get('VEHICULO', '')).upper(),
                 'Asesor': asesor_raw,
@@ -131,14 +128,13 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
 
 # --- MANEJO DE ESTADO TEMPORAL (TURNOS) ---
-# Inicializamos el dataframe de turnos en la memoria temporal para permitir edición
 if 'df_turnos_memoria' not in st.session_state:
     st.session_state.df_turnos_memoria = obtener_turnos()
 
 # --- EJECUCIÓN ---
 df = obtener_datos_maestros()
 
-# Creamos las 4 pestañas, poniendo Turnero primero
+# Creamos las 4 pestañas
 tab_turnos, tab_prog, tab_fac, tab_kpi = st.tabs(["📋 Turnero Diario", "📅 Programación", "💰 Facturación", "📊 KPIs"])
 
 # ==========================================
@@ -149,11 +145,9 @@ with tab_turnos:
     
     col1, col2 = st.columns([1, 2])
     with col1:
-        # Filtro de fecha para buscar turnos
         fecha_filtro = st.date_input("📅 Seleccionar Fecha", value=datetime.today())
     
     with col2:
-        # Formulario para agregar ingresos sin turno ("Walk-ins")
         with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
             with st.form("form_sin_turno"):
                 c_pat, c_veh, c_ase = st.columns(3)
@@ -178,28 +172,21 @@ with tab_turnos:
 
     st.divider()
 
-    # Filtramos los turnos de la memoria por la fecha seleccionada
     df_hoy = st.session_state.df_turnos_memoria[st.session_state.df_turnos_memoria['Fecha'] == fecha_filtro].copy()
 
     if df_hoy.empty:
-        if GID_TURNOS == "PONER_AQUI_GID_TURNOS":
-            st.warning("⚠️ Recuerda colocar el GID de la pestaña TURNOS en el código (línea 17).")
-        else:
-            st.info(f"No hay turnos programados para la fecha: {fecha_filtro.strftime('%d/%m/%Y')}")
+        st.info(f"No hay turnos programados para la fecha: {fecha_filtro.strftime('%d/%m/%Y')}")
     else:
-        # Separamos: Pendientes (OR vacío) y Recibidos (OR con datos)
-        # Asumimos que si tiene OR, ya está "Recibido"
         df_hoy['OR'] = df_hoy['OR'].fillna("")
         df_pendientes = df_hoy[df_hoy['OR'].str.strip() == ""].sort_values('Asesor')
         df_recibidos = df_hoy[df_hoy['OR'].str.strip() != ""]
 
         st.write("### ⏱️ Turnos Pendientes")
         if not df_pendientes.empty:
-            # Mostramos un editor interactivo
             edited_df = st.data_editor(
                 df_pendientes,
                 column_config={
-                    "Fecha": None, # Ocultamos la fecha porque ya estamos filtrando por día
+                    "Fecha": None, 
                     "Patente": st.column_config.TextColumn("Patente", disabled=True),
                     "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
                     "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA),
@@ -212,17 +199,15 @@ with tab_turnos:
                 key=f"editor_pendientes_{fecha_filtro}"
             )
             
-            # Botón para guardar los cambios de la tabla interactiva en la memoria
+            # Al guardar, solo se actualizan los registros que se editaron
             if st.button("💾 Guardar Checklist y OR"):
-                # Actualizamos nuestro session_state con los cambios
-                # Usamos el índice de df_pendientes para mapear las filas originales
                 for idx, row in edited_df.iterrows():
                     st.session_state.df_turnos_memoria.loc[idx, 'Asesor'] = row['Asesor']
                     st.session_state.df_turnos_memoria.loc[idx, 'Recibido'] = row['Recibido']
                     st.session_state.df_turnos_memoria.loc[idx, 'Fotos'] = row['Fotos']
                     st.session_state.df_turnos_memoria.loc[idx, 'OR'] = row['OR']
                 st.success("Cambios actualizados.")
-                st.rerun() # Recargamos para que las OR completas bajen a la sección de recibidos
+                st.rerun() 
                 
         else:
             st.success("¡Todos los vehículos del día ya tienen OR abierta!")
@@ -236,7 +221,6 @@ with tab_turnos:
             )
         else:
             st.write("Aún no se ha abierto ninguna OR en este día.")
-
 
 # ==========================================
 # PESTAÑA 2: PROGRAMACIÓN
@@ -311,7 +295,6 @@ with tab_kpi:
 with st.sidebar:
     if st.button("🔄 Refrescar Datos desde Sheet"):
         st.cache_data.clear()
-        # Esto borrará la memoria de turnos actual para forzar la bajada del Sheet de nuevo
         if 'df_turnos_memoria' in st.session_state:
             del st.session_state['df_turnos_memoria']
         st.rerun()
