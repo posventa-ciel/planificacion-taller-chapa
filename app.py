@@ -355,12 +355,22 @@ with tab_turnos:
             st.dataframe(df_canc_view, hide_index=True, use_container_width=True)
 
 # ==========================================
-# PESTAÑA 2: PROGRAMACIÓN DEL TALLER (NUEVA)
+# PESTAÑA 2: PROGRAMACIÓN DEL TALLER (ACTUALIZADA CON FILTRO)
 # ==========================================
 with tab_prog:
     st.subheader("🛠️ Programación y Estado del Taller")
     
     if not df.empty:
+        # AGREGAMOS EL FILTRO POR ASESOR (Solo ocupa un tercio de la pantalla)
+        col_filtro, _ = st.columns([1, 2])
+        with col_filtro:
+            asesor_filtro_prog = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA, key="filtro_asesor_prog")
+            
+        # Filtramos el DataFrame según lo seleccionado
+        df_prog_filtrado = df.copy()
+        if asesor_filtro_prog != "TODOS":
+            df_prog_filtrado = df_prog_filtrado[df_prog_filtrado['Asesor'] == asesor_filtro_prog]
+
         # Definimos los bloques de estado para iterar
         estados_map = [
             ("⏳ EN PROCESO", "PROCESO"), 
@@ -369,6 +379,8 @@ with tab_prog:
             ("🚚 ENTREGADOS", "ENTREGADO")
         ]
         
+        st.divider()
+
         for titulo, match in estados_map:
             # Resaltar en rojo los detenidos
             if "DETENIDO" in match:
@@ -378,9 +390,9 @@ with tab_prog:
                 
             col1, col2 = st.columns(2)
             
-            # Función interna para dibujar la tabla de un grupo específico
+            # Función interna para dibujar la tabla de un grupo específico (Usa el df filtrado)
             def dibujar_tabla(col, grupo_nombre, m_key):
-                d_g = df[df['Grupo'] == grupo_nombre].copy()
+                d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
                 d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
                 with col:
                     st.caption(f"**{grupo_nombre}**")
@@ -391,18 +403,21 @@ with tab_prog:
                         )
                         df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Paños', 'Asesor']]
                         df_vista.columns = ['Estado Taller (Col T)', 'Fecha Prom.', 'Patente', 'Vehículo', 'Paños', 'Asesor']
-                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}")
+                        
+                        # Generamos una key única para que no de error si cambian los datos
+                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}")
                     else:
-                        st.caption(f"Sin vehículos en {grupo_nombre}.")
+                        st.caption(f"Sin vehículos asignados.")
 
             dibujar_tabla(col1, "GRUPO UNO", match)
             dibujar_tabla(col2, "GRUPO DOS", match)
             
             st.divider()
         
-        # Guardamos el Gantt en un expander para no ensuciar la vista principal
+        # Guardamos el Gantt en un expander
         with st.expander("📊 Ver Gráfico de Gantt (Carga General del Taller)"):
-            df_gantt = df[df['Estado_Fac'].isin(['SI', 'NO'])].copy()
+            # El Gantt también usa el DataFrame filtrado
+            df_gantt = df_prog_filtrado[df_prog_filtrado['Estado_Fac'].isin(['SI', 'NO'])].copy()
             if not df_gantt.empty:
                 df_gantt['ID'] = df_gantt['Patente'] + " - " + df_gantt['Vehiculo'].str[:15]
                 fig = px.timeline(
@@ -416,7 +431,7 @@ with tab_prog:
                 fig.add_annotation(x=milisegundos_hoy, y=1.05, yref="paper", text="HOY", showarrow=False, font=dict(color="red", size=12))
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("No hay vehículos pendientes con estado de facturación SI o NO.")
+                st.info("No hay vehículos para mostrar en el gráfico.")
 
 # ==========================================
 # PESTAÑA 3: FACTURACIÓN
