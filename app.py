@@ -31,11 +31,10 @@ ASESORES_LISTA = ["SIN ASIGNAR", "CESAR OLIVA", "JAVIER GUTIERREZ", "ANDREA MART
 # --- FUNCIONES DE PROCESAMIENTO ---
 def parsear_fecha_español(texto):
     if pd.isna(texto) or str(texto).strip() == "": 
-        return None # Si no hay fecha, devuelve None
+        return None 
     
     texto = str(texto).lower().strip()
     
-    # Detectar formato "9-3" o "09/03"
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
     if match_dm:
         dia, mes = match_dm.groups()
@@ -68,7 +67,6 @@ def obtener_turnos():
         d = pd.read_csv(url, dtype=str)
         d.columns = d.columns.str.strip().str.upper()
         
-        # FILTRO CLAVE: Borrar filas vacías del Excel
         if 'PATENTE' in d.columns:
             d = d.dropna(subset=['PATENTE'])
             d = d[d['PATENTE'].str.strip() != ""]
@@ -78,7 +76,6 @@ def obtener_turnos():
             col_fecha = next((c for c in d.columns if 'FECH' in c), None)
             fecha_turno = parsear_fecha_español(row.get(col_fecha, ''))
             
-            # Si no pudo leer la fecha, le asignamos la de hoy por defecto
             if fecha_turno is None:
                 fecha_turno = datetime.now()
             
@@ -153,10 +150,8 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
 
 # --- BLINDAJE DE MEMORIA ---
-# Cambiamos el nombre de la variable para FORZAR a la app a descargar los datos frescos
 if 'memoria_turnos_v4' not in st.session_state:
     st.session_state.memoria_turnos_v4 = obtener_turnos()
-    # Limpiamos memorias viejas si existen
     if 'df_turnos_memoria' in st.session_state:
         del st.session_state['df_turnos_memoria']
 
@@ -271,14 +266,15 @@ with tab_turnos:
         else:
             st.write("Aún no se ha abierto ninguna OR en estas fechas.")
             
+        # NUEVO: Tabla de cancelados bien visible (fuera del expander)
         if not df_cancelados.empty:
-            with st.expander("🗑️ Ver Turnos Cancelados"):
-                df_canc_view = df_cancelados[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor']].copy()
-                df_canc_view['Fecha'] = pd.to_datetime(df_canc_view['Fecha']).dt.strftime('%d/%m/%Y')
-                st.dataframe(df_canc_view, hide_index=True, use_container_width=True)
+            st.write("### 🗑️ Turnos Cancelados")
+            df_canc_view = df_cancelados[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor']].copy()
+            df_canc_view['Fecha'] = pd.to_datetime(df_canc_view['Fecha']).dt.strftime('%d/%m/%Y')
+            st.dataframe(df_canc_view, hide_index=True, use_container_width=True)
 
 # ==========================================
-# PESTAÑA 2: PROGRAMACIÓN
+# PESTAÑA 2, 3 y 4 se mantienen igual...
 # ==========================================
 with tab_prog:
     if not df.empty:
@@ -295,14 +291,10 @@ with tab_prog:
             milisegundos_hoy = datetime.now().timestamp() * 1000
             fig.add_vline(x=milisegundos_hoy, line_dash="dash", line_color="red")
             fig.add_annotation(x=milisegundos_hoy, y=1.05, yref="paper", text="HOY", showarrow=False, font=dict(color="red", size=12))
-            
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No hay vehículos pendientes con estado SI o NO.")
 
-# ==========================================
-# PESTAÑA 3: FACTURACIÓN
-# ==========================================
 with tab_fac:
     if not df.empty:
         st.subheader("Análisis de Facturación")
@@ -322,9 +314,6 @@ with tab_fac:
             res_asesor = df.groupby(['Asesor', 'Estado'])['Precio'].sum().unstack(fill_value=0)
             st.table(res_asesor.style.format("$ {:,.0f}"))
 
-# ==========================================
-# PESTAÑA 4: KPIs
-# ==========================================
 with tab_kpi:
     if not df.empty:
         st.subheader("Indicadores Clave de Desempeño (KPI)")
