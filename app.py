@@ -125,13 +125,11 @@ def obtener_datos_maestros():
             url = f"{URL_BASE}{gid}"
             d = pd.read_csv(url, dtype=str)
             
-            # NUEVO: Forzamos la captura de la Columna T (índice 19)
             if len(d.columns) > 19:
                 cols = list(d.columns)
                 cols[19] = 'ESTADO_TALLER'
                 d.columns = cols
             
-            # NUEVO: Forzamos la captura de la Columna I (índice 8) para Fecha
             if len(d.columns) > 8:
                 cols = list(d.columns)
                 cols[8] = 'FECHA_PROMESA_I'
@@ -152,10 +150,8 @@ def obtener_datos_maestros():
     filas = []
     
     for _, row in df_raw.iterrows():
-        # Tomamos directamente la Columna I (índice 8)
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         
-        # Si no tiene fecha, lo mandamos 10 años al futuro para que quede último en prioridad
         fecha_promesa_display = f_fin.date() if f_fin is not None else None
         if f_fin is None:
             f_fin = datetime.now() + timedelta(days=3650)
@@ -172,7 +168,6 @@ def obtener_datos_maestros():
         try: precio_val = float(precio_raw) if precio_raw != "" else 0.0
         except: precio_val = 0.0
 
-        # Obtener Estado Taller (Columna T)
         estado_taller = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper()
         if not estado_taller: estado_taller = "SIN ESTADO"
 
@@ -355,23 +350,23 @@ with tab_turnos:
             st.dataframe(df_canc_view, hide_index=True, use_container_width=True)
 
 # ==========================================
-# PESTAÑA 2: PROGRAMACIÓN DEL TALLER (ACTUALIZADA CON FILTRO)
+# PESTAÑA 2: PROGRAMACIÓN DEL TALLER (CON FILTRO CORREGIDO)
 # ==========================================
 with tab_prog:
     st.subheader("🛠️ Programación y Estado del Taller")
     
     if not df.empty:
-        # AGREGAMOS EL FILTRO POR ASESOR (Solo ocupa un tercio de la pantalla)
         col_filtro, _ = st.columns([1, 2])
         with col_filtro:
             asesor_filtro_prog = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA, key="filtro_asesor_prog")
             
-        # Filtramos el DataFrame según lo seleccionado
+        # NUEVA LÓGICA DE FILTRADO: Buscamos solo el primer nombre
         df_prog_filtrado = df.copy()
         if asesor_filtro_prog != "TODOS":
-            df_prog_filtrado = df_prog_filtrado[df_prog_filtrado['Asesor'] == asesor_filtro_prog]
+            # Si eligió "CESAR OLIVA", se queda con "CESAR" y busca eso en el DataFrame
+            nombre_corto = asesor_filtro_prog.split()[0].upper()
+            df_prog_filtrado = df_prog_filtrado[df_prog_filtrado['Asesor'].str.contains(nombre_corto, case=False, na=False)]
 
-        # Definimos los bloques de estado para iterar
         estados_map = [
             ("⏳ EN PROCESO", "PROCESO"), 
             ("⛔ DETENIDOS", "DETENIDO"), 
@@ -382,7 +377,6 @@ with tab_prog:
         st.divider()
 
         for titulo, match in estados_map:
-            # Resaltar en rojo los detenidos
             if "DETENIDO" in match:
                 st.error(f"### {titulo}")
             else:
@@ -390,7 +384,6 @@ with tab_prog:
                 
             col1, col2 = st.columns(2)
             
-            # Función interna para dibujar la tabla de un grupo específico (Usa el df filtrado)
             def dibujar_tabla(col, grupo_nombre, m_key):
                 d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
                 d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
@@ -403,8 +396,6 @@ with tab_prog:
                         )
                         df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Paños', 'Asesor']]
                         df_vista.columns = ['Estado Taller (Col T)', 'Fecha Prom.', 'Patente', 'Vehículo', 'Paños', 'Asesor']
-                        
-                        # Generamos una key única para que no de error si cambian los datos
                         st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}")
                     else:
                         st.caption(f"Sin vehículos asignados.")
@@ -414,9 +405,7 @@ with tab_prog:
             
             st.divider()
         
-        # Guardamos el Gantt en un expander
         with st.expander("📊 Ver Gráfico de Gantt (Carga General del Taller)"):
-            # El Gantt también usa el DataFrame filtrado
             df_gantt = df_prog_filtrado[df_prog_filtrado['Estado_Fac'].isin(['SI', 'NO'])].copy()
             if not df_gantt.empty:
                 df_gantt['ID'] = df_gantt['Patente'] + " - " + df_gantt['Vehiculo'].str[:15]
