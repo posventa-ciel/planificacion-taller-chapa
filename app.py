@@ -14,7 +14,7 @@ URL_BASE = f"https://docs.google.com/spreadsheets/d/{ID_NUEVO_SHEET}/export?form
 # 🚨 IMPORTANTE: Reemplaza esto con el GID de tu pestaña "TURNOS"
 GID_TURNOS = "PONER_AQUI_GID_TURNOS" 
 
-GIDS = {
+GIDS = {109364752#gid=109364752
     "GRUPO UNO": "609774337",
     "GRUPO DOS": "1212138688",
     "GRUPO TRES": "527300176",
