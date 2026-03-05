@@ -11,7 +11,6 @@ st.title("🚀 Sistema de Gestión Autociel")
 ID_NUEVO_SHEET = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
 URL_BASE = f"https://docs.google.com/spreadsheets/d/{ID_NUEVO_SHEET}/export?format=csv&gid="
 
-# GID de la pestaña "TURNOS"
 GID_TURNOS = "109364752" 
 
 GIDS = {
@@ -32,31 +31,35 @@ ASESORES_LISTA = ["SIN ASIGNAR", "CESAR OLIVA", "JAVIER GUTIERREZ", "ANDREA MART
 # --- FUNCIONES DE PROCESAMIENTO ---
 def parsear_fecha_español(texto):
     if pd.isna(texto) or str(texto).strip() == "": 
-        return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return None # Si no hay fecha, devuelve None
     
     texto = str(texto).lower().strip()
     
-    # NUEVO: Detectar formato exacto "9-3" o "09-03" (Día-Mes) sin año
+    # Detectar formato "9-3" o "09/03"
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
     if match_dm:
         dia, mes = match_dm.groups()
-        año_actual = datetime.now().year
-        return datetime(año_actual, int(mes), int(dia))
+        return datetime(datetime.now().year, int(mes), int(dia))
         
     try:
-        return pd.to_datetime(texto, dayfirst=True)
+        res = pd.to_datetime(texto, dayfirst=True)
+        if pd.notna(res): return res.to_pydatetime()
     except:
+        pass
+        
+    try:
         match = re.search(r'(\d+)\s+de\s+([a-z]+)\s+de\s+(\d+)', texto)
         if match:
             dia, mes_txt, anio = match.groups()
             mes_num = MESES_ES.get(mes_txt, 1)
             return datetime(int(anio), int(mes_num), int(dia))
+    except:
+        pass
             
-    return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return None
 
 @st.cache_data(ttl=60)
 def obtener_turnos():
-    """Lee la pestaña de turnos del sheet"""
     if GID_TURNOS == "PONER_AQUI_GID_TURNOS":
         return pd.DataFrame(columns=['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor', 'Recibido', 'Fotos', 'Cancelado', 'OR'])
         
@@ -65,10 +68,19 @@ def obtener_turnos():
         d = pd.read_csv(url, dtype=str)
         d.columns = d.columns.str.strip().str.upper()
         
+        # FILTRO CLAVE: Borrar filas vacías del Excel
+        if 'PATENTE' in d.columns:
+            d = d.dropna(subset=['PATENTE'])
+            d = d[d['PATENTE'].str.strip() != ""]
+        
         filas = []
         for _, row in d.iterrows():
             col_fecha = next((c for c in d.columns if 'FECH' in c), None)
             fecha_turno = parsear_fecha_español(row.get(col_fecha, ''))
+            
+            # Si no pudo leer la fecha, le asignamos la de hoy por defecto
+            if fecha_turno is None:
+                fecha_turno = datetime.now()
             
             asesor_raw = str(row.get('ASESOR', 'SIN ASIGNAR')).strip().upper()
             if asesor_raw not in ASESORES_LISTA:
@@ -76,13 +88,13 @@ def obtener_turnos():
                 
             filas.append({
                 'Fecha': fecha_turno.date(), 
-                'Hora': str(row.get('HORAS', '')).strip(), # Agregamos la columna hora
+                'Hora': str(row.get('HORAS', '')).strip(),
                 'Patente': str(row.get('PATENTE', '')).upper(),
                 'Vehiculo': str(row.get('VEHICULO', '')).upper(),
                 'Asesor': asesor_raw,
                 'Recibido': False,
                 'Fotos': False,
-                'Cancelado': False, # Nueva bandera para cancelados
+                'Cancelado': False,
                 'OR': ""
             })
         return pd.DataFrame(filas)
@@ -91,7 +103,6 @@ def obtener_turnos():
 
 @st.cache_data(ttl=60)
 def obtener_datos_maestros():
-    """Lee el resto de las pestañas"""
     dfs = []
     for n, gid in GIDS.items():
         try:
@@ -100,6 +111,7 @@ def obtener_datos_maestros():
             d.columns = d.columns.str.strip().str.upper()
             if 'PATENTE' in d.columns:
                 d = d.dropna(subset=['PATENTE'])
+                d = d[d['PATENTE'].str.strip() != ""]
                 d['GRUPO_ORIGEN'] = n
                 dfs.append(d)
         except: pass
@@ -112,6 +124,8 @@ def obtener_datos_maestros():
     for _, row in df_raw.iterrows():
         col_fecha = next((c for c in df_raw.columns if 'FECH' in c or 'PROMESA' in c), None)
         f_fin = parsear_fecha_español(row.get(col_fecha, ''))
+        if f_fin is None:
+            f_fin = datetime.now()
         
         try:
             texto_panos = str(row.get('PAÑOS', '1')).replace(',', '.')
@@ -138,15 +152,13 @@ def obtener_datos_maestros():
         })
     return pd.DataFrame(filas)
 
-# --- MANEJO DE ESTADO TEMPORAL Y BLINDAJE ---
-if 'df_turnos_memoria' not in st.session_state:
-    st.session_state.df_turnos_memoria = obtener_turnos()
-else:
-    # 🚨 PARCHE DE SEGURIDAD: Si la memoria quedó con una versión vieja, inyectamos las columnas nuevas
-    if 'Cancelado' not in st.session_state.df_turnos_memoria.columns:
-        st.session_state.df_turnos_memoria['Cancelado'] = False
-    if 'Hora' not in st.session_state.df_turnos_memoria.columns:
-        st.session_state.df_turnos_memoria['Hora'] = ""
+# --- BLINDAJE DE MEMORIA ---
+# Cambiamos el nombre de la variable para FORZAR a la app a descargar los datos frescos
+if 'memoria_turnos_v4' not in st.session_state:
+    st.session_state.memoria_turnos_v4 = obtener_turnos()
+    # Limpiamos memorias viejas si existen
+    if 'df_turnos_memoria' in st.session_state:
+        del st.session_state['df_turnos_memoria']
 
 # --- EJECUCIÓN ---
 df = obtener_datos_maestros()
@@ -197,14 +209,14 @@ with tab_turnos:
                             'Cancelado': False,
                             'OR': ""
                         }])
-                        st.session_state.df_turnos_memoria = pd.concat([st.session_state.df_turnos_memoria, nuevo_ingreso], ignore_index=True)
+                        st.session_state.memoria_turnos_v4 = pd.concat([st.session_state.memoria_turnos_v4, nuevo_ingreso], ignore_index=True)
                         st.success(f"Ingreso agregado con éxito.")
                         st.rerun()
 
     st.divider()
 
-    mask = (st.session_state.df_turnos_memoria['Fecha'] >= f_inicio) & (st.session_state.df_turnos_memoria['Fecha'] <= f_fin)
-    df_rango = st.session_state.df_turnos_memoria[mask].copy()
+    mask = (st.session_state.memoria_turnos_v4['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v4['Fecha'] <= f_fin)
+    df_rango = st.session_state.memoria_turnos_v4[mask].copy()
 
     if df_rango.empty:
         st.info("No hay turnos para las fechas seleccionadas.")
@@ -239,13 +251,13 @@ with tab_turnos:
             
             if st.button("💾 Guardar Cambios"):
                 for idx, row in edited_df.iterrows():
-                    st.session_state.df_turnos_memoria.loc[idx, 'Fecha'] = row['Fecha']
-                    st.session_state.df_turnos_memoria.loc[idx, 'Hora'] = row['Hora']
-                    st.session_state.df_turnos_memoria.loc[idx, 'Asesor'] = row['Asesor']
-                    st.session_state.df_turnos_memoria.loc[idx, 'Recibido'] = row['Recibido']
-                    st.session_state.df_turnos_memoria.loc[idx, 'Fotos'] = row['Fotos']
-                    st.session_state.df_turnos_memoria.loc[idx, 'OR'] = row['OR']
-                    st.session_state.df_turnos_memoria.loc[idx, 'Cancelado'] = row['Cancelado']
+                    st.session_state.memoria_turnos_v4.loc[idx, 'Fecha'] = row['Fecha']
+                    st.session_state.memoria_turnos_v4.loc[idx, 'Hora'] = row['Hora']
+                    st.session_state.memoria_turnos_v4.loc[idx, 'Asesor'] = row['Asesor']
+                    st.session_state.memoria_turnos_v4.loc[idx, 'Recibido'] = row['Recibido']
+                    st.session_state.memoria_turnos_v4.loc[idx, 'Fotos'] = row['Fotos']
+                    st.session_state.memoria_turnos_v4.loc[idx, 'OR'] = row['OR']
+                    st.session_state.memoria_turnos_v4.loc[idx, 'Cancelado'] = row['Cancelado']
                 st.success("Taller actualizado.")
                 st.rerun() 
         else:
@@ -338,6 +350,6 @@ with tab_kpi:
 with st.sidebar:
     if st.button("🔄 Refrescar Datos desde Sheet"):
         st.cache_data.clear()
-        if 'df_turnos_memoria' in st.session_state:
-            del st.session_state['df_turnos_memoria']
+        if 'memoria_turnos_v4' in st.session_state:
+            del st.session_state['memoria_turnos_v4']
         st.rerun()
