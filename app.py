@@ -59,7 +59,7 @@ def parsear_fecha_español(texto):
 
 @st.cache_data(ttl=60)
 def obtener_turnos():
-    columnas_base = ['Tipo', 'Fecha', 'Hora', 'Vehiculo', 'Patente', 'Asesor', 'Precio', 'Paños', 'Observaciones', 'Tiempo_Entrega', 'Cliente', 'Seguro', 'Recibido', 'Fotos', 'Cancelado', 'OR']
+    columnas_base = ['Tipo', 'Fecha', 'Hora', 'Vehiculo', 'Patente', 'Asesor', 'Precio', 'Paños', 'Observaciones', 'Tiempo_Entrega', 'Cliente', 'Seguro', 'Recibido', 'Fotos', 'Cancelado', 'OR', 'Eliminar']
     if GID_TURNOS == "PONER_AQUI_GID_TURNOS":
         return pd.DataFrame(columns=columnas_base)
         
@@ -102,7 +102,8 @@ def obtener_turnos():
                 'Recibido': False,
                 'Fotos': False,
                 'Cancelado': False,
-                'OR': ""
+                'OR': "",
+                'Eliminar': False
             })
         return pd.DataFrame(filas)
     except Exception as e:
@@ -160,9 +161,9 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
 
 # --- BLINDAJE DE MEMORIA ---
-if 'memoria_turnos_v5' not in st.session_state:
-    st.session_state.memoria_turnos_v5 = obtener_turnos()
-    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4']:
+if 'memoria_turnos_v6' not in st.session_state:
+    st.session_state.memoria_turnos_v6 = obtener_turnos()
+    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5']:
         if old_key in st.session_state:
             del st.session_state[old_key]
 
@@ -196,7 +197,8 @@ with tab_turnos:
     
     with col2:
         with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
-            with st.form("form_sin_turno"):
+            # SOLUCIÓN 1: clear_on_submit=True limpia los campos al guardar
+            with st.form("form_sin_turno", clear_on_submit=True):
                 st.write("📝 **Completar datos del ingreso sin turno:**")
                 
                 c_pat, c_veh, c_cli = st.columns(3)
@@ -234,9 +236,10 @@ with tab_turnos:
                             'Recibido': False,
                             'Fotos': False,
                             'Cancelado': False,
-                            'OR': ""
+                            'OR': "",
+                            'Eliminar': False # Por defecto no se borra
                         }])
-                        st.session_state.memoria_turnos_v5 = pd.concat([st.session_state.memoria_turnos_v5, nuevo_ingreso], ignore_index=True)
+                        st.session_state.memoria_turnos_v6 = pd.concat([st.session_state.memoria_turnos_v6, nuevo_ingreso], ignore_index=True)
                         st.success(f"Ingreso sin turno agregado con éxito.")
                         st.rerun()
                     else:
@@ -244,8 +247,8 @@ with tab_turnos:
 
     st.divider()
 
-    mask = (st.session_state.memoria_turnos_v5['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v5['Fecha'] <= f_fin)
-    df_rango = st.session_state.memoria_turnos_v5[mask].copy()
+    mask = (st.session_state.memoria_turnos_v6['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v6['Fecha'] <= f_fin)
+    df_rango = st.session_state.memoria_turnos_v6[mask].copy()
 
     if df_rango.empty:
         st.info("No hay turnos para las fechas seleccionadas.")
@@ -261,7 +264,8 @@ with tab_turnos:
         if not df_pendientes.empty:
             st.caption("💡 Tilda Recibido, Fotos, completá la OR y luego apretá Guardar Cambios.")
             
-            columnas_orden = ['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']
+            # SOLUCIÓN 2: Agregamos la columna Eliminar a la vista
+            columnas_orden = ['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']
             
             edited_df = st.data_editor(
                 df_pendientes[columnas_orden],
@@ -277,7 +281,8 @@ with tab_turnos:
                     "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False),
                     "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False),
                     "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10),
-                    "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False)
+                    "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False),
+                    "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)
                 },
                 hide_index=True,
                 use_container_width=True,
@@ -285,14 +290,24 @@ with tab_turnos:
             )
             
             if st.button("💾 Guardar Cambios"):
+                indices_a_borrar = []
                 for idx, row in edited_df.iterrows():
-                    st.session_state.memoria_turnos_v5.loc[idx, 'Fecha'] = row['Fecha']
-                    st.session_state.memoria_turnos_v5.loc[idx, 'Hora'] = row['Hora']
-                    st.session_state.memoria_turnos_v5.loc[idx, 'Asesor'] = row['Asesor']
-                    st.session_state.memoria_turnos_v5.loc[idx, 'Recibido'] = row['Recibido']
-                    st.session_state.memoria_turnos_v5.loc[idx, 'Fotos'] = row['Fotos']
-                    st.session_state.memoria_turnos_v5.loc[idx, 'OR'] = row['OR']
-                    st.session_state.memoria_turnos_v5.loc[idx, 'Cancelado'] = row['Cancelado']
+                    # Si tildó borrar, anotamos el índice para eliminarlo de raíz
+                    if row.get('Eliminar', False):
+                        indices_a_borrar.append(idx)
+                    else:
+                        st.session_state.memoria_turnos_v6.loc[idx, 'Fecha'] = row['Fecha']
+                        st.session_state.memoria_turnos_v6.loc[idx, 'Hora'] = row['Hora']
+                        st.session_state.memoria_turnos_v6.loc[idx, 'Asesor'] = row['Asesor']
+                        st.session_state.memoria_turnos_v6.loc[idx, 'Recibido'] = row['Recibido']
+                        st.session_state.memoria_turnos_v6.loc[idx, 'Fotos'] = row['Fotos']
+                        st.session_state.memoria_turnos_v6.loc[idx, 'OR'] = row['OR']
+                        st.session_state.memoria_turnos_v6.loc[idx, 'Cancelado'] = row['Cancelado']
+                
+                # Ejecutamos el borrado real de la base de memoria
+                if indices_a_borrar:
+                    st.session_state.memoria_turnos_v6.drop(indices_a_borrar, inplace=True)
+                    
                 st.success("Taller actualizado.")
                 st.rerun() 
         else:
@@ -301,89 +316,4 @@ with tab_turnos:
         st.write("### 🏁 Turnos Recibidos (Con OR Abierta)")
         if not df_recibidos.empty:
             df_recibidos_view = df_recibidos[['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'OR']].copy()
-            df_recibidos_view['Fecha'] = pd.to_datetime(df_recibidos_view['Fecha']).dt.strftime('%d/%m/%Y')
-            st.dataframe(df_recibidos_view, hide_index=True, use_container_width=True)
-        else:
-            st.write("Aún no se ha abierto ninguna OR en estas fechas.")
-            
-        if not df_cancelados.empty:
-            st.write("### 🗑️ Turnos Cancelados")
-            df_canc_view = df_cancelados[['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor']].copy()
-            df_canc_view['Fecha'] = pd.to_datetime(df_canc_view['Fecha']).dt.strftime('%d/%m/%Y')
-            st.dataframe(df_canc_view, hide_index=True, use_container_width=True)
-
-# ==========================================
-# PESTAÑA 2: PROGRAMACIÓN
-# ==========================================
-with tab_prog:
-    if not df.empty:
-        st.subheader("Cronograma de Trabajo (Basado en Paños)")
-        df_gantt = df[df['Estado'].isin(['SI', 'NO'])].copy()
-        if not df_gantt.empty:
-            df_gantt['ID'] = df_gantt['Patente'] + " - " + df_gantt['Vehiculo'].str[:15]
-            fig = px.timeline(
-                df_gantt, x_start="Inicio", x_end="Fin", y="ID", color="Grupo", text="Paños",
-                hover_data=["Asesor", "Estado"], title="Carga de Taller por Grupo"
-            )
-            fig.update_yaxes(autorange="reversed")
-            
-            milisegundos_hoy = datetime.now().timestamp() * 1000
-            fig.add_vline(x=milisegundos_hoy, line_dash="dash", line_color="red")
-            fig.add_annotation(x=milisegundos_hoy, y=1.05, yref="paper", text="HOY", showarrow=False, font=dict(color="red", size=12))
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No hay vehículos pendientes con estado SI o NO.")
-
-# ==========================================
-# PESTAÑA 3: FACTURACIÓN
-# ==========================================
-with tab_fac:
-    if not df.empty:
-        st.subheader("Análisis de Facturación")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Facturado (FAC)", f"$ {df[df['Estado'] == 'FAC']['Precio'].sum():,.0f}")
-        m2.metric("Confirmado (SI)", f"$ {df[df['Estado'] == 'SI']['Precio'].sum():,.0f}")
-        m3.metric("Pendiente (NO)", f"$ {df[df['Estado'] == 'NO']['Precio'].sum():,.0f}")
-        
-        st.divider()
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.write("### 👥 Por Grupo")
-            res_grupo = df.groupby(['Grupo', 'Estado'])['Precio'].sum().unstack(fill_value=0)
-            st.table(res_grupo.style.format("$ {:,.0f}"))
-        with col_b:
-            st.write("### 👔 Por Asesor")
-            res_asesor = df.groupby(['Asesor', 'Estado'])['Precio'].sum().unstack(fill_value=0)
-            st.table(res_asesor.style.format("$ {:,.0f}"))
-
-# ==========================================
-# PESTAÑA 4: KPIs
-# ==========================================
-with tab_kpi:
-    if not df.empty:
-        st.subheader("Indicadores Clave de Desempeño (KPI)")
-        k1, k2, k3 = st.columns(3)
-        
-        df_fac = df[df['Estado'] == 'FAC']
-        ticket = df_fac['Precio'].mean() if not df_fac.empty else 0
-        k1.metric("Ticket Promedio (FAC)", f"$ {ticket:,.0f}")
-        
-        intensidad = df['Paños'].mean()
-        k2.metric("Paños Promedio / Auto", f"{intensidad:.2f}")
-        
-        total_casos = len(df[df['Estado'].isin(['FAC', 'SI', 'NO'])])
-        casos_fac = len(df_fac)
-        ratio = (casos_fac / total_casos * 100) if total_casos > 0 else 0
-        k3.metric("% Conversión a Facturado", f"{ratio:.1f}%")
-
-        st.divider()
-        st.write("### Cantidad de Vehículos por Asesor")
-        fig_asesor = px.bar(df, x="Asesor", color="Estado", barmode="group")
-        st.plotly_chart(fig_asesor, use_container_width=True)
-
-with st.sidebar:
-    if st.button("🔄 Refrescar Datos desde Sheet"):
-        st.cache_data.clear()
-        if 'memoria_turnos_v5' in st.session_state:
-            del st.session_state['memoria_turnos_v5']
-        st.rerun()
+            df_recibidos_view['Fecha'] = pd.to_datetime(df_
