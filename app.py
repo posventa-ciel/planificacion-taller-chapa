@@ -29,7 +29,6 @@ MESES_ES = {
 
 ASESORES_LISTA = ["SIN ASIGNAR", "CESAR OLIVA", "JAVIER GUTIERREZ", "ANDREA MARTINS"]
 
-# NUEVO: Lista de clientes desplegable
 CLIENTES_LISTA = [
     "CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "CIEL USADO",
     "AUTOSOL", "AUTOSOL SEGURO", "AUTOSOL OKM", "AUTOSOL USADO", 
@@ -170,10 +169,10 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
 
 # --- BLINDAJE DE MEMORIA ---
-# Pasamos a v7 para asegurar el cambio de Cliente y limpieza de caché
-if 'memoria_turnos_v7' not in st.session_state:
-    st.session_state.memoria_turnos_v7 = obtener_turnos()
-    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5', 'memoria_turnos_v6']:
+# Versión 8 para limpiar los datos de prueba y separar las tablas
+if 'memoria_turnos_v8' not in st.session_state:
+    st.session_state.memoria_turnos_v8 = obtener_turnos()
+    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5', 'memoria_turnos_v6', 'memoria_turnos_v7']:
         if old_key in st.session_state:
             del st.session_state[old_key]
 
@@ -213,7 +212,6 @@ with tab_turnos:
                 c_pat, c_veh, c_cli = st.columns(3)
                 nueva_patente = c_pat.text_input("Patente *")
                 nuevo_vehiculo = c_veh.text_input("Vehículo *")
-                # CAMBIO: Selector desplegable para Cliente
                 nuevo_cliente = c_cli.selectbox("Cliente", CLIENTES_LISTA)
                 
                 c_seg, c_pre, c_pan = st.columns(3)
@@ -241,7 +239,7 @@ with tab_turnos:
                             'Paños': nuevo_panos,
                             'Observaciones': nueva_obs,
                             'Tiempo_Entrega': nuevo_tiempo,
-                            'Cliente': nuevo_cliente, # Toma del desplegable
+                            'Cliente': nuevo_cliente,
                             'Seguro': nuevo_seguro.upper(),
                             'Recibido': False,
                             'Fotos': False,
@@ -249,17 +247,17 @@ with tab_turnos:
                             'OR': "",
                             'Eliminar': False
                         }])
-                        st.session_state.memoria_turnos_v7 = pd.concat([st.session_state.memoria_turnos_v7, nuevo_ingreso], ignore_index=True)
+                        st.session_state.memoria_turnos_v8 = pd.concat([st.session_state.memoria_turnos_v8, nuevo_ingreso], ignore_index=True)
                         st.success(f"Ingreso sin turno agregado con éxito.")
-                        time.sleep(0.5) # Pequeña pausa para que se vea el mensaje
+                        time.sleep(0.5)
                         st.rerun()
                     else:
                         st.error("Por favor completa la Patente y el Vehículo como mínimo.")
 
     st.divider()
 
-    mask = (st.session_state.memoria_turnos_v7['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v7['Fecha'] <= f_fin)
-    df_rango = st.session_state.memoria_turnos_v7[mask].copy()
+    mask = (st.session_state.memoria_turnos_v8['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v8['Fecha'] <= f_fin)
+    df_rango = st.session_state.memoria_turnos_v8[mask].copy()
 
     if df_rango.empty:
         st.info("No hay turnos para las fechas seleccionadas.")
@@ -268,67 +266,107 @@ with tab_turnos:
         df_cancelados = df_rango[df_rango['Cancelado'] == True]
         df_activos = df_rango[df_rango['Cancelado'] == False]
         
-        df_pendientes = df_activos[df_activos['OR'].str.strip() == ""].sort_values(['Tipo', 'Fecha', 'Hora', 'Asesor'])
+        df_pendientes = df_activos[df_activos['OR'].str.strip() == ""].sort_values(['Fecha', 'Hora', 'Asesor'])
         df_recibidos = df_activos[df_activos['OR'].str.strip() != ""]
 
-        st.write("### ⏱️ Turnos Pendientes (Editables)")
+        st.write("### ⏱️ Turnos Pendientes")
+        
         if not df_pendientes.empty:
             st.caption("💡 Tilda Recibido, Fotos, completá la OR y luego apretá Guardar Cambios.")
             
-            columnas_orden = ['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']
+            # SEPARAMOS LOS DATOS
+            df_prog = df_pendientes[df_pendientes['Tipo'] == '📅 PROGRAMADO']
+            df_sin = df_pendientes[df_pendientes['Tipo'] == '🚶‍♂️ SIN TURNO']
             
-            edited_df = st.data_editor(
-                df_pendientes[columnas_orden],
-                column_config={
-                    "Tipo": st.column_config.TextColumn("Tipo", disabled=True),
-                    "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
-                    "Hora": st.column_config.TextColumn("Hora", disabled=False),
-                    "Patente": st.column_config.TextColumn("Patente", disabled=True),
-                    "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
-                    "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
-                    "Seguro": st.column_config.TextColumn("Seguro", disabled=True),
-                    "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA),
-                    "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False),
-                    "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False),
-                    "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10),
-                    "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False),
-                    "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)
-                },
-                hide_index=True,
-                use_container_width=True,
-                key=f"editor_pendientes"
-            )
+            edited_prog = pd.DataFrame()
+            edited_sin = pd.DataFrame()
             
+            # TABLA 1: PROGRAMADOS (Sin botón de borrar)
+            if not df_prog.empty:
+                st.write("#### 📅 Programados (Desde Sheet)")
+                col_prog = ['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']
+                
+                edited_prog = st.data_editor(
+                    df_prog[col_prog],
+                    column_config={
+                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                        "Hora": st.column_config.TextColumn("Hora", disabled=False),
+                        "Patente": st.column_config.TextColumn("Patente", disabled=True),
+                        "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
+                        "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
+                        "Seguro": st.column_config.TextColumn("Seguro", disabled=True),
+                        "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA),
+                        "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False),
+                        "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False),
+                        "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10),
+                        "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False)
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="editor_prog"
+                )
+
+            # TABLA 2: SIN TURNO (Con botón de borrar)
+            if not df_sin.empty:
+                st.write("#### 🚶‍♂️ Ingresos Adicionales (Sin Turno)")
+                col_sin = ['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']
+                
+                edited_sin = st.data_editor(
+                    df_sin[col_sin],
+                    column_config={
+                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                        "Hora": st.column_config.TextColumn("Hora", disabled=False),
+                        "Patente": st.column_config.TextColumn("Patente", disabled=True),
+                        "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
+                        "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
+                        "Seguro": st.column_config.TextColumn("Seguro", disabled=True),
+                        "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA),
+                        "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False),
+                        "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False),
+                        "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10),
+                        "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False),
+                        "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar Definitivo", default=False)
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="editor_sin"
+                )
+
+            # BOTÓN ÚNICO DE GUARDADO PARA AMBAS TABLAS
             if st.button("💾 Guardar Cambios"):
                 indices_a_borrar = []
-                advertencia_borrado = False
                 
-                for idx, row in edited_df.iterrows():
-                    # CAMBIO LÓGICO: Protección contra borrado de programados
-                    if row.get('Eliminar', False) and row['Tipo'] == '🚶‍♂️ SIN TURNO':
-                        indices_a_borrar.append(idx)
-                    else:
-                        if row.get('Eliminar', False) and row['Tipo'] != '🚶‍♂️ SIN TURNO':
-                            advertencia_borrado = True
-                            
-                        st.session_state.memoria_turnos_v7.loc[idx, 'Fecha'] = row['Fecha']
-                        st.session_state.memoria_turnos_v7.loc[idx, 'Hora'] = row['Hora']
-                        st.session_state.memoria_turnos_v7.loc[idx, 'Asesor'] = row['Asesor']
-                        st.session_state.memoria_turnos_v7.loc[idx, 'Recibido'] = row['Recibido']
-                        st.session_state.memoria_turnos_v7.loc[idx, 'Fotos'] = row['Fotos']
-                        st.session_state.memoria_turnos_v7.loc[idx, 'OR'] = row['OR']
-                        st.session_state.memoria_turnos_v7.loc[idx, 'Cancelado'] = row['Cancelado']
-                        # Forzamos que vuelva a ser False por seguridad
-                        st.session_state.memoria_turnos_v7.loc[idx, 'Eliminar'] = False 
+                # Guardamos los cambios de los programados
+                if not edited_prog.empty:
+                    for idx, row in edited_prog.iterrows():
+                        st.session_state.memoria_turnos_v8.loc[idx, 'Fecha'] = row['Fecha']
+                        st.session_state.memoria_turnos_v8.loc[idx, 'Hora'] = row['Hora']
+                        st.session_state.memoria_turnos_v8.loc[idx, 'Asesor'] = row['Asesor']
+                        st.session_state.memoria_turnos_v8.loc[idx, 'Recibido'] = row['Recibido']
+                        st.session_state.memoria_turnos_v8.loc[idx, 'Fotos'] = row['Fotos']
+                        st.session_state.memoria_turnos_v8.loc[idx, 'OR'] = row['OR']
+                        st.session_state.memoria_turnos_v8.loc[idx, 'Cancelado'] = row['Cancelado']
+
+                # Guardamos los cambios de los sin turno o los borramos
+                if not edited_sin.empty:
+                    for idx, row in edited_sin.iterrows():
+                        if row.get('Eliminar', False):
+                            indices_a_borrar.append(idx)
+                        else:
+                            st.session_state.memoria_turnos_v8.loc[idx, 'Fecha'] = row['Fecha']
+                            st.session_state.memoria_turnos_v8.loc[idx, 'Hora'] = row['Hora']
+                            st.session_state.memoria_turnos_v8.loc[idx, 'Asesor'] = row['Asesor']
+                            st.session_state.memoria_turnos_v8.loc[idx, 'Recibido'] = row['Recibido']
+                            st.session_state.memoria_turnos_v8.loc[idx, 'Fotos'] = row['Fotos']
+                            st.session_state.memoria_turnos_v8.loc[idx, 'OR'] = row['OR']
+                            st.session_state.memoria_turnos_v8.loc[idx, 'Cancelado'] = row['Cancelado']
                 
+                # Ejecutamos el borrado
                 if indices_a_borrar:
-                    st.session_state.memoria_turnos_v7.drop(indices_a_borrar, inplace=True)
-                
-                if advertencia_borrado:
-                    st.warning("⚠️ OJO: Los turnos PROGRAMADOS no se pueden borrar. Si el cliente no vino, usa la opción '❌ Cancelar'.")
-                    time.sleep(3) # Da tiempo a que lea el mensaje antes de recargar
-                else:
-                    st.success("Taller actualizado.")
+                    st.session_state.memoria_turnos_v8.drop(indices_a_borrar, inplace=True)
+                    
+                st.success("Taller actualizado.")
+                time.sleep(0.5)
                 st.rerun() 
         else:
             st.success("¡Excelente! No quedan ingresos pendientes para estas fechas.")
@@ -419,6 +457,6 @@ with tab_kpi:
 with st.sidebar:
     if st.button("🔄 Refrescar Datos desde Sheet"):
         st.cache_data.clear()
-        if 'memoria_turnos_v7' in st.session_state:
-            del st.session_state['memoria_turnos_v7']
+        if 'memoria_turnos_v8' in st.session_state:
+            del st.session_state['memoria_turnos_v8']
         st.rerun()
