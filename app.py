@@ -114,9 +114,21 @@ else:
             )
             fig.update_yaxes(autorange="reversed")
             
-            # SOLUCIÓN AL ERROR: Convertir fecha a string o timestamp para la línea vertical
-            hoy_linea = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            fig.add_vline(x=hoy_linea, line_dash="dash", line_color="red", annotation_text="HOY")
+            # SOLUCIÓN AL ERROR DE PLOTLY: Usamos milisegundos para la línea de HOY
+            milisegundos_hoy = datetime.now().timestamp() * 1000
+            
+            # 1. Dibujamos solo la línea roja punteada
+            fig.add_vline(x=milisegundos_hoy, line_dash="dash", line_color="red")
+            
+            # 2. Dibujamos el texto "HOY" como una anotación separada
+            fig.add_annotation(
+                x=milisegundos_hoy, 
+                y=1.05, 
+                yref="paper", 
+                text="HOY", 
+                showarrow=False, 
+                font=dict(color="red", size=12)
+            )
             
             st.plotly_chart(fig, use_container_width=True)
         else:
