@@ -24,7 +24,6 @@ MESES_ES = {
     'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12
 }
 
-# --- FUNCIONES DE PROCESAMIENTO ---
 def parsear_fecha_español(texto):
     if pd.isna(texto) or str(texto).strip() == "": 
         return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -59,10 +58,11 @@ def obtener_datos_maestros():
     filas = []
     
     for _, row in df_raw.iterrows():
+        # Buscar columna de fecha
         col_fecha = next((c for c in df_raw.columns if 'FECH' in c or 'PROMESA' in c), None)
         f_fin = parsear_fecha_español(row.get(col_fecha, ''))
         
-        # Procesar Paños
+        # Procesar Paños (Días de trabajo)
         try:
             texto_panos = str(row.get('PAÑOS', '1')).replace(',', '.')
             numeros = re.findall(r"[-+]?\d*\.\d+|\d+", texto_panos)
@@ -78,7 +78,7 @@ def obtener_datos_maestros():
 
         filas.append({
             'Grupo': row.get('GRUPO_ORIGEN'),
-            'Asesor': str(row.get('ASESOR', 'Sin Asesor')).strip().upper(),
+            'Asesor': str(row.get('ASESOR', 'SIN ASESOR')).strip().upper(),
             'Patente': str(row.get('PATENTE', '')),
             'Vehiculo': str(row.get('VEHICULO', '')),
             'Inicio': f_inicio,
@@ -89,20 +89,19 @@ def obtener_datos_maestros():
         })
     return pd.DataFrame(filas)
 
-# --- CARGA ---
+# --- EJECUCIÓN ---
 df = obtener_datos_maestros()
 
 if df.empty:
     st.error("No se encontraron datos. Verifica la conexión con Google Sheets.")
 else:
-    # --- PESTAÑAS ---
     tab1, tab2, tab3 = st.tabs(["📅 Programación", "💰 Facturación", "📊 KPIs"])
 
     with tab1:
         st.subheader("Cronograma de Trabajo (Basado en Paños)")
         df_gantt = df[df['Estado'].isin(['SI', 'NO'])].copy()
         if not df_gantt.empty:
-            df_gantt['ID'] = df_gantt['Patente'] + " - " + df_gantt['Vehiculo']
+            df_gantt['ID'] = df_gantt['Patente'] + " - " + df_gantt['Vehiculo'].str[:15]
             fig = px.timeline(
                 df_gantt, 
                 x_start="Inicio", 
@@ -114,55 +113,65 @@ else:
                 title="Carga de Taller por Grupo"
             )
             fig.update_yaxes(autorange="reversed")
-            fig.add_vline(x=datetime.now(), line_dash="dash", line_color="red", annotation_text="HOY")
+            
+            # SOLUCIÓN AL ERROR: Convertir fecha a string o timestamp para la línea vertical
+            hoy_linea = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            fig.add_vline(x=hoy_linea, line_dash="dash", line_color="red", annotation_text="HOY")
+            
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("No hay vehículos pendientes.")
+            st.info("No hay vehículos pendientes con estado SI o NO.")
 
     with tab2:
         st.subheader("Análisis de Facturación")
+        
+        # Métricas generales
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Facturado (FAC)", f"$ {df[df['Estado'] == 'FAC']['Precio'].sum():,.0f}")
+        m2.metric("Confirmado (SI)", f"$ {df[df['Estado'] == 'SI']['Precio'].sum():,.0f}")
+        m3.metric("Pendiente (NO)", f"$ {df[df['Estado'] == 'NO']['Precio'].sum():,.0f}")
+        
+        st.divider()
         col_a, col_b = st.columns(2)
         
         with col_a:
-            st.write("### Por Grupo")
+            st.write("### 👥 Por Grupo")
             res_grupo = df.groupby(['Grupo', 'Estado'])['Precio'].sum().unstack(fill_value=0)
-            st.dataframe(res_grupo.style.format("$ {:,.0f}"))
+            st.table(res_grupo.style.format("$ {:,.0f}"))
             
         with col_b:
-            st.write("### Por Asesor")
+            st.write("### 👔 Por Asesor")
             res_asesor = df.groupby(['Asesor', 'Estado'])['Precio'].sum().unstack(fill_value=0)
-            st.dataframe(res_asesor.style.format("$ {:,.0f}"))
-
-        fig_pie = px.sunburst(df, path=['Estado', 'Grupo'], values='Precio', title="Distribución de Montos")
-        st.plotly_chart(fig_pie)
+            st.table(res_asesor.style.format("$ {:,.0f}"))
 
     with tab3:
         st.subheader("Indicadores Clave de Desempeño (KPI)")
         
         k1, k2, k3 = st.columns(3)
         
-        # 1. Ticket Promedio
-        ticket_promedio = df[df['Precio'] > 0]['Precio'].mean()
-        k1.metric("Ticket Promedio", f"$ {ticket_promedio:,.0f}")
+        # KPI 1: Ticket Promedio de lo facturado
+        df_fac = df[df['Estado'] == 'FAC']
+        ticket = df_fac['Precio'].mean() if not df_fac.empty else 0
+        k1.metric("Ticket Promedio (FAC)", f"$ {ticket:,.0f}")
         
-        # 2. Eficiencia de Paños (Promedio de paños por auto)
-        promedio_panos = df['Paños'].mean()
-        k2.metric("Paños Promedio / Auto", f"{promedio_panos:.2f}")
+        # KPI 2: Intensidad de trabajo (Paños promedio)
+        intensidad = df['Paños'].mean()
+        k2.metric("Paños Promedio / Auto", f"{intensidad:.2f}")
         
-        # 3. % de Conversión (FAC vs SI)
-        total_casos = len(df)
-        casos_fac = len(df[df['Estado'] == 'FAC'])
+        # KPI 3: Efectividad de Cierre
+        total_casos = len(df[df['Estado'].isin(['FAC', 'SI', 'NO'])])
+        casos_fac = len(df_fac)
         ratio = (casos_fac / total_casos * 100) if total_casos > 0 else 0
-        k3.metric("% Facturación Realizada", f"{ratio:.1f}%")
+        k3.metric("% Conversión a Facturado", f"{ratio:.1f}%")
 
         st.divider()
-        st.write("### Volumen de Unidades por Grupo")
-        fig_bar = px.bar(df, x="Grupo", color="Estado", barmode="group", title="Cantidad de Vehículos")
-        st.plotly_chart(fig_bar)
+        
+        # Gráfico de barras de carga por asesor
+        st.write("### Cantidad de Vehículos por Asesor")
+        fig_asesor = px.bar(df, x="Asesor", color="Estado", barmode="group")
+        st.plotly_chart(fig_asesor, use_container_width=True)
 
-# Botón de recarga en el sidebar
 with st.sidebar:
-    st.image("https://via.placeholder.com/150", caption="Autociel TPS")
-    if st.button("🔄 Actualizar Datos"):
+    if st.button("🔄 Refrescar Datos"):
         st.cache_data.clear()
         st.rerun()
