@@ -40,52 +40,82 @@ CLIENTES_LISTA = [
 def parsear_fecha_español(texto):
     if pd.isna(texto) or str(texto).strip() == "": 
         return None 
+    
     texto = str(texto).lower().strip()
+    
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
     if match_dm:
         dia, mes = match_dm.groups()
         return datetime(datetime.now().year, int(mes), int(dia))
+        
     try:
         res = pd.to_datetime(texto, dayfirst=True)
         if pd.notna(res): return res.to_pydatetime()
-    except: pass
+    except:
+        pass
+        
     try:
         match = re.search(r'(\d+)\s+de\s+([a-z]+)\s+de\s+(\d+)', texto)
         if match:
             dia, mes_txt, anio = match.groups()
             mes_num = MESES_ES.get(mes_txt, 1)
             return datetime(int(anio), int(mes_num), int(dia))
-    except: pass
+    except:
+        pass
+            
     return None
 
 @st.cache_data(ttl=60)
 def obtener_turnos():
     columnas_base = ['Tipo', 'Fecha', 'Hora', 'Vehiculo', 'Patente', 'Asesor', 'Precio', 'Paños', 'Observaciones', 'Tiempo_Entrega', 'Cliente', 'Seguro', 'Recibido', 'Fotos', 'Cancelado', 'OR', 'Eliminar']
+    if GID_TURNOS == "PONER_AQUI_GID_TURNOS":
+        return pd.DataFrame(columns=columnas_base)
+        
     url = f"{URL_BASE}{GID_TURNOS}"
     try:
         d = pd.read_csv(url, dtype=str)
         d.columns = d.columns.str.strip().str.upper()
+        
         if 'PATENTE' in d.columns:
             d = d.dropna(subset=['PATENTE'])
             d = d[d['PATENTE'].str.strip() != ""]
+        
         filas = []
         for _, row in d.iterrows():
             col_fecha = next((c for c in d.columns if 'FECH' in c), None)
-            f_turno = parsear_fecha_español(row.get(col_fecha, ''))
-            if f_turno is None: f_turno = datetime.now()
-            ase_raw = str(row.get('ASESOR', 'SIN ASIGNAR')).strip().upper()
-            if ase_raw not in ASESORES_LISTA: ase_raw = "SIN ASIGNAR"
-            col_t = next((c for c in d.columns if 'TIEMPO' in c), None)
+            fecha_turno = parsear_fecha_español(row.get(col_fecha, ''))
+            
+            if fecha_turno is None:
+                fecha_turno = datetime.now()
+            
+            asesor_raw = str(row.get('ASESOR', 'SIN ASIGNAR')).strip().upper()
+            if asesor_raw not in ASESORES_LISTA:
+                asesor_raw = "SIN ASIGNAR"
+                
+            col_tiempo = next((c for c in d.columns if 'TIEMPO' in c), None)
+                
             filas.append({
-                'Tipo': '📅 PROGRAMADO', 'Fecha': f_turno.date(), 'Hora': str(row.get('HORAS', '')).strip(),
-                'Vehiculo': str(row.get('VEHICULO', '')).upper(), 'Patente': str(row.get('PATENTE', '')).upper(),
-                'Asesor': ase_raw, 'Precio': str(row.get('PRECIO', '')).strip(), 'Paños': str(row.get('PAÑOS', '')).strip(),
-                'Observaciones': str(row.get('OBSERVACIONES', '')).strip(), 'Tiempo_Entrega': str(row.get(col_t, '')) if col_t else "",
-                'Cliente': str(row.get('CLIENTE', '')).upper(), 'Seguro': str(row.get('SEGURO', '')).upper(),
-                'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False
+                'Tipo': '📅 PROGRAMADO',
+                'Fecha': fecha_turno.date(), 
+                'Hora': str(row.get('HORAS', '')).strip(),
+                'Vehiculo': str(row.get('VEHICULO', '')).upper(),
+                'Patente': str(row.get('PATENTE', '')).upper(),
+                'Asesor': asesor_raw,
+                'Precio': str(row.get('PRECIO', '')).strip(),
+                'Paños': str(row.get('PAÑOS', '')).strip(),
+                'Observaciones': str(row.get('OBSERVACIONES', '')).strip(),
+                'Tiempo_Entrega': str(row.get(col_tiempo, '')) if col_tiempo else "",
+                'Cliente': str(row.get('CLIENTE', '')).upper(),
+                'Seguro': str(row.get('SEGURO', '')).upper(),
+                'Recibido': False,
+                'Fotos': False,
+                'Cancelado': False,
+                'OR': "",
+                'Eliminar': False
             })
         return pd.DataFrame(filas)
-    except: return pd.DataFrame(columns=columnas_base)
+    except Exception as e:
+        return pd.DataFrame(columns=columnas_base)
 
 @st.cache_data(ttl=60)
 def obtener_datos_maestros():
@@ -94,128 +124,350 @@ def obtener_datos_maestros():
         try:
             url = f"{URL_BASE}{gid}"
             d = pd.read_csv(url, dtype=str)
-            # Columna T para Estado y Columna I para Promesa
+            
+            # NUEVO: Forzamos la captura de la Columna T (índice 19)
             if len(d.columns) > 19:
                 cols = list(d.columns)
                 cols[19] = 'ESTADO_TALLER'
                 d.columns = cols
+            
+            # NUEVO: Forzamos la captura de la Columna I (índice 8) para Fecha
             if len(d.columns) > 8:
                 cols = list(d.columns)
-                cols[8] = 'FECHA_PROMESA_I' # <-- Ajuste Columna I
+                cols[8] = 'FECHA_PROMESA_I'
                 d.columns = cols
+                
             d.columns = d.columns.str.strip().str.upper()
+            
             if 'PATENTE' in d.columns:
                 d = d.dropna(subset=['PATENTE'])
                 d = d[d['PATENTE'].str.strip() != ""]
                 d['GRUPO_ORIGEN'] = n
                 dfs.append(d)
         except: pass
+    
     if not dfs: return pd.DataFrame()
+    
     df_raw = pd.concat(dfs, ignore_index=True)
     filas = []
+    
     for _, row in df_raw.iterrows():
+        # Tomamos directamente la Columna I (índice 8)
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
-        fecha_disp = f_fin.date() if f_fin is not None else None
-        if f_fin is None: f_fin = datetime.now() + timedelta(days=3650)
+        
+        # Si no tiene fecha, lo mandamos 10 años al futuro para que quede último en prioridad
+        fecha_promesa_display = f_fin.date() if f_fin is not None else None
+        if f_fin is None:
+            f_fin = datetime.now() + timedelta(days=3650)
+        
         try:
-            txt_p = str(row.get('PAÑOS', '1')).replace(',', '.')
-            nums = re.findall(r"[-+]?\d*\.\d+|\d+", txt_p)
-            panos = float(nums[0]) if nums else 1.0
+            texto_panos = str(row.get('PAÑOS', '1')).replace(',', '.')
+            numeros = re.findall(r"[-+]?\d*\.\d+|\d+", texto_panos)
+            panos = float(numeros[0]) if numeros else 1.0
         except: panos = 1.0
-        f_ini = f_fin - timedelta(days=max(1, int(panos)))
-        pre_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
-        try: pre_val = float(pre_raw) if pre_raw != "" else 0.0
-        except: pre_val = 0.0
-        est_t = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper()
-        if not est_t: est_t = "SIN ESTADO"
+            
+        f_inicio = f_fin - timedelta(days=max(1, int(panos)))
+        
+        precio_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
+        try: precio_val = float(precio_raw) if precio_raw != "" else 0.0
+        except: precio_val = 0.0
+
+        # Obtener Estado Taller (Columna T)
+        estado_taller = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper()
+        if not estado_taller: estado_taller = "SIN ESTADO"
+
         filas.append({
-            'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': str(row.get('ASESOR', 'SIN ASESOR')).strip().upper(),
-            'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')),
-            'Inicio': f_ini, 'Fin': f_fin, 'Fecha_Promesa_Disp': fecha_disp,
-            'Paños': panos, 'Estado_Fac': str(row.get('FAC', '')).strip().upper(),
-            'Estado_Taller': est_t, 'Precio': pre_val
+            'Grupo': row.get('GRUPO_ORIGEN'),
+            'Asesor': str(row.get('ASESOR', 'SIN ASESOR')).strip().upper(),
+            'Patente': str(row.get('PATENTE', '')),
+            'Vehiculo': str(row.get('VEHICULO', '')),
+            'Inicio': f_inicio,
+            'Fin': f_fin,
+            'Fecha_Promesa_Disp': fecha_promesa_display,
+            'Paños': panos,
+            'Estado_Fac': str(row.get('FAC', '')).strip().upper(),
+            'Estado_Taller': estado_taller,
+            'Precio': precio_val
         })
     return pd.DataFrame(filas)
 
+# --- BLINDAJE DE MEMORIA ---
 if 'memoria_turnos_v11' not in st.session_state:
     st.session_state.memoria_turnos_v11 = obtener_turnos()
+    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5', 'memoria_turnos_v6', 'memoria_turnos_v7', 'memoria_turnos_v8', 'memoria_turnos_v9', 'memoria_turnos_v10']:
+        if old_key in st.session_state:
+            del st.session_state[old_key]
 
+# --- EJECUCIÓN ---
 df = obtener_datos_maestros()
-t_tur, t_pro, t_fac, t_kpi = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs"])
 
-# --- PESTAÑA 1: TURNERO ---
-with t_tur:
+tab_turnos, tab_prog, tab_fac, tab_kpi = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs"])
+
+# ==========================================
+# PESTAÑA 1: TURNERO DIARIO (IGUAL QUE ANTES)
+# ==========================================
+with tab_turnos:
     st.subheader("Recepción de Vehículos")
-    c_f, c_a, c_add = st.columns([1, 1, 2])
-    with c_f:
+    
+    col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
+    
+    with col_fecha:
         hoy = datetime.today().date()
-        sel_f = st.date_input("📅 Rango", value=(hoy, hoy), format="DD/MM/YYYY")
-        if isinstance(sel_f, tuple) and len(sel_f) == 2: f_i, f_f = sel_f
-        elif isinstance(sel_f, tuple): f_i = f_f = sel_f[0]
-        else: f_i = f_f = sel_f
-    with c_a:
-        f_ase = st.selectbox("👔 Filtrar Asesor", ["TODOS"] + ASESORES_LISTA)
-    with c_add:
-        with st.expander("➕ Walk-in"):
-            with st.form("f_in", clear_on_submit=True):
-                cp, cv, cc = st.columns(3)
-                p_n, v_n, c_n = cp.text_input("Patente*"), cv.text_input("Vehículo*"), cc.selectbox("Cliente", CLIENTES_LISTA)
-                if st.form_submit_button("Cargar"):
-                    if p_n and v_n:
-                        new = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_i, 'Hora': '-', 'Vehiculo': v_n.upper(), 'Patente': p_n.upper(), 'Asesor': f_ase if f_ase != "TODOS" else "SIN ASIGNAR", 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
-                        st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, new], ignore_index=True)
+        fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=(hoy, hoy), format="DD/MM/YYYY")
+        if isinstance(fechas_seleccionadas, tuple):
+            if len(fechas_seleccionadas) == 2:
+                f_inicio, f_fin = fechas_seleccionadas
+            else:
+                f_inicio = f_fin = fechas_seleccionadas[0]
+        else:
+            f_inicio = f_fin = fechas_seleccionadas
+
+    with col_asesor:
+        asesor_filtro = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA)
+    
+    with col_add:
+        with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
+            with st.form("form_sin_turno", clear_on_submit=True):
+                c_pat, c_veh, c_cli = st.columns(3)
+                nueva_patente = c_pat.text_input("Patente *")
+                nuevo_vehiculo = c_veh.text_input("Vehículo *")
+                nuevo_cliente = c_cli.selectbox("Cliente", CLIENTES_LISTA)
+                
+                c_seg, c_pre, c_pan = st.columns(3)
+                nuevo_seguro = c_seg.text_input("Seguro")
+                nuevo_precio = c_pre.text_input("Precio ($)")
+                nuevo_panos = c_pan.text_input("Paños (Ej: 1.5)")
+                
+                c_tie, c_obs, c_ase = st.columns(3)
+                nuevo_tiempo = c_tie.text_input("Tiempo Entrega (Días)")
+                nueva_obs = c_obs.text_input("Observaciones")
+                idx_asesor = ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0
+                nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=idx_asesor)
+                
+                st.caption("* Campos obligatorios para identificar el auto.")
+                
+                if st.form_submit_button("Agregar al Turnero"):
+                    if nueva_patente and nuevo_vehiculo:
+                        nuevo_ingreso = pd.DataFrame([{
+                            'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-',
+                            'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(),
+                            'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos,
+                            'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo,
+                            'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(),
+                            'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False
+                        }])
+                        st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
+                        st.success(f"Ingreso sin turno agregado con éxito.")
+                        time.sleep(0.5)
                         st.rerun()
+                    else:
+                        st.error("Por favor completa la Patente y el Vehículo.")
 
     st.divider()
-    m = (st.session_state.memoria_turnos_v11['Fecha'] >= f_i) & (st.session_state.memoria_turnos_v11['Fecha'] <= f_f)
-    df_r = st.session_state.memoria_turnos_v11[m].copy()
-    if f_ase != "TODOS": df_r = df_r[df_r['Asesor'] == f_ase]
-    if not df_r.empty:
-        df_r['OR'] = df_r['OR'].fillna("")
-        df_act = df_r[df_r['Cancelado'] == False]
-        m_rec = (df_act['OR'].str.strip() != "") & (df_act['Recibido'] == True) & (df_act['Fotos'] == True)
-        df_p = df_act[~m_rec].sort_values(['Fecha', 'Hora'])
-        st.write("### ⏱️ Pendientes")
-        ed = st.data_editor(df_p[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']], hide_index=True, use_container_width=True, key="e_p")
-        if st.button("💾 Guardar"):
-            for idx, r in ed.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR', 'Cancelado']] = r[['Recibido', 'Fotos', 'OR', 'Cancelado']]
-            st.success("Guardado"); time.sleep(0.5); st.rerun()
 
-# --- PESTAÑA 2: PROGRAMACIÓN ---
-with t_pro:
-    st.subheader("🛠️ Estado del Taller por Grupo")
+    mask = (st.session_state.memoria_turnos_v11['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v11['Fecha'] <= f_fin)
+    df_rango = st.session_state.memoria_turnos_v11[mask].copy()
+
+    if asesor_filtro != "TODOS":
+        df_rango = df_rango[df_rango['Asesor'] == asesor_filtro]
+
+    if df_rango.empty:
+        st.info("No hay turnos para los filtros seleccionados.")
+    else:
+        df_rango['OR'] = df_rango['OR'].fillna("")
+        df_cancelados = df_rango[df_rango['Cancelado'] == True]
+        df_activos = df_rango[df_rango['Cancelado'] == False]
+        
+        mascara_recibidos = (df_activos['OR'].str.strip() != "") & (df_activos['Recibido'] == True) & (df_activos['Fotos'] == True)
+        
+        df_pendientes = df_activos[~mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
+        df_recibidos = df_activos[mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
+
+        st.write("### ⏱️ Turnos Pendientes")
+        if not df_pendientes.empty:
+            df_prog = df_pendientes[df_pendientes['Tipo'] == '📅 PROGRAMADO']
+            df_sin = df_pendientes[df_pendientes['Tipo'] == '🚶‍♂️ SIN TURNO']
+            edited_prog, edited_sin = pd.DataFrame(), pd.DataFrame()
+            
+            if not df_prog.empty:
+                st.write("#### 📅 Programados")
+                edited_prog = st.data_editor(
+                    df_prog[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']],
+                    column_config={
+                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                        "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA),
+                        "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False),
+                        "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False),
+                        "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10),
+                        "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False)
+                    }, hide_index=True, use_container_width=True, key="editor_prog"
+                )
+
+            if not df_sin.empty:
+                st.write("#### 🚶‍♂️ Ingresos Adicionales (Sin Turno)")
+                edited_sin = st.data_editor(
+                    df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']],
+                    column_config={
+                        "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                        "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA),
+                        "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False),
+                        "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False),
+                        "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10),
+                        "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False),
+                        "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)
+                    }, hide_index=True, use_container_width=True, key="editor_sin"
+                )
+
+            if st.button("💾 Guardar Cambios en Pendientes"):
+                indices_a_borrar = []
+                if not edited_prog.empty:
+                    for idx, row in edited_prog.iterrows():
+                        st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                if not edited_sin.empty:
+                    for idx, row in edited_sin.iterrows():
+                        if row.get('Eliminar', False): indices_a_borrar.append(idx)
+                        else: st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                
+                if indices_a_borrar: st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
+                st.success("Actualizado."); time.sleep(0.5); st.rerun() 
+
+        st.divider()
+        st.write("### 🏁 Turnos Recibidos (Con OR Abierta)")
+        if not df_recibidos.empty:
+            edited_recibidos = st.data_editor(
+                df_recibidos[['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Recibido', 'Fotos', 'OR']],
+                column_config={
+                    "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY", disabled=True),
+                    "Recibido": st.column_config.CheckboxColumn("✅ Recibido"),
+                    "Fotos": st.column_config.CheckboxColumn("📸 Fotos"),
+                    "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10)
+                }, hide_index=True, use_container_width=True, key="editor_recibidos"
+            )
+            if st.button("💾 Guardar Correcciones"):
+                for idx, row in edited_recibidos.iterrows():
+                    st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR']] = row[['Recibido', 'Fotos', 'OR']]
+                st.success("Correcciones aplicadas."); time.sleep(0.5); st.rerun()
+                
+        if not df_cancelados.empty:
+            st.write("### 🗑️ Turnos Cancelados")
+            df_canc_view = df_cancelados[['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor']].copy()
+            df_canc_view['Fecha'] = pd.to_datetime(df_canc_view['Fecha']).dt.strftime('%d/%m/%Y')
+            st.dataframe(df_canc_view, hide_index=True, use_container_width=True)
+
+# ==========================================
+# PESTAÑA 2: PROGRAMACIÓN DEL TALLER (NUEVA)
+# ==========================================
+with tab_prog:
+    st.subheader("🛠️ Programación y Estado del Taller")
+    
     if not df.empty:
-        c1, c2 = st.columns(2)
-        def bloques(df_g, kp):
-            est_map = {"⏳ EN PROCESO": "PROCESO", "⛔ DETENIDOS": "DETENIDO", "✅ TERMINADOS": "TERM PEND", "🚚 ENTREGADOS": "ENTREGADO"}
-            for lab, match in est_map.items():
-                d_e = df_g[df_g['Estado_Taller'].str.contains(match, na=False)].copy()
-                if "DETENIDO" in match: st.error(f"**{lab}**")
-                else: st.info(f"**{lab}**")
-                if not d_e.empty:
-                    d_e = d_e.sort_values(by='Fin')
-                    d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-                    st.dataframe(d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor']], hide_index=True, use_container_width=True, key=f"{kp}_{match}")
-                else: st.caption("Sin datos.")
+        # Definimos los bloques de estado para iterar
+        estados_map = [
+            ("⏳ EN PROCESO", "PROCESO"), 
+            ("⛔ DETENIDOS", "DETENIDO"), 
+            ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), 
+            ("🚚 ENTREGADOS", "ENTREGADO")
+        ]
+        
+        for titulo, match in estados_map:
+            # Resaltar en rojo los detenidos
+            if "DETENIDO" in match:
+                st.error(f"### {titulo}")
+            else:
+                st.write(f"### {titulo}")
+                
+            col1, col2 = st.columns(2)
+            
+            # Función interna para dibujar la tabla de un grupo específico
+            def dibujar_tabla(col, grupo_nombre, m_key):
+                d_g = df[df['Grupo'] == grupo_nombre].copy()
+                d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
+                with col:
+                    st.caption(f"**{grupo_nombre}**")
+                    if not d_e.empty:
+                        d_e = d_e.sort_values(by='Fin', ascending=True)
+                        d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(
+                            lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha"
+                        )
+                        df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Paños', 'Asesor']]
+                        df_vista.columns = ['Estado Taller (Col T)', 'Fecha Prom.', 'Patente', 'Vehículo', 'Paños', 'Asesor']
+                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}")
+                    else:
+                        st.caption(f"Sin vehículos en {grupo_nombre}.")
+
+            dibujar_tabla(col1, "GRUPO UNO", match)
+            dibujar_tabla(col2, "GRUPO DOS", match)
+            
             st.divider()
-        with c1: st.write("## 🧑‍🔧 GRUPO UNO"); bloques(df[df['Grupo'] == 'GRUPO UNO'], "G1")
-        with c2: st.write("## 🧑‍🔧 GRUPO DOS"); bloques(df[df['Grupo'] == 'GRUPO DOS'], "G2")
+        
+        # Guardamos el Gantt en un expander para no ensuciar la vista principal
+        with st.expander("📊 Ver Gráfico de Gantt (Carga General del Taller)"):
+            df_gantt = df[df['Estado_Fac'].isin(['SI', 'NO'])].copy()
+            if not df_gantt.empty:
+                df_gantt['ID'] = df_gantt['Patente'] + " - " + df_gantt['Vehiculo'].str[:15]
+                fig = px.timeline(
+                    df_gantt, x_start="Inicio", x_end="Fin", y="ID", color="Grupo", text="Paños",
+                    hover_data=["Asesor", "Estado_Taller"], title="Carga de Taller por Grupo"
+                )
+                fig.update_yaxes(autorange="reversed")
+                
+                milisegundos_hoy = datetime.now().timestamp() * 1000
+                fig.add_vline(x=milisegundos_hoy, line_dash="dash", line_color="red")
+                fig.add_annotation(x=milisegundos_hoy, y=1.05, yref="paper", text="HOY", showarrow=False, font=dict(color="red", size=12))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No hay vehículos pendientes con estado de facturación SI o NO.")
 
-# --- FACTURACIÓN Y KPI ---
-with t_fac:
+# ==========================================
+# PESTAÑA 3: FACTURACIÓN
+# ==========================================
+with tab_fac:
     if not df.empty:
+        st.subheader("Análisis de Facturación")
         m1, m2, m3 = st.columns(3)
-        m1.metric("Facturado", f"$ {df[df['Estado_Fac'] == 'FAC']['Precio'].sum():,.0f}")
-        m2.metric("Confirmado", f"$ {df[df['Estado_Fac'] == 'SI']['Precio'].sum():,.0f}")
-        m3.metric("Pendiente", f"$ {df[df['Estado_Fac'] == 'NO']['Precio'].sum():,.0f}")
+        m1.metric("Facturado (FAC)", f"$ {df[df['Estado_Fac'] == 'FAC']['Precio'].sum():,.0f}")
+        m2.metric("Confirmado (SI)", f"$ {df[df['Estado_Fac'] == 'SI']['Precio'].sum():,.0f}")
+        m3.metric("Pendiente (NO)", f"$ {df[df['Estado_Fac'] == 'NO']['Precio'].sum():,.0f}")
+        
+        st.divider()
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.write("### 👥 Por Grupo")
+            res_grupo = df.groupby(['Grupo', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
+            st.table(res_grupo.style.format("$ {:,.0f}"))
+        with col_b:
+            st.write("### 👔 Por Asesor")
+            res_asesor = df.groupby(['Asesor', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
+            st.table(res_asesor.style.format("$ {:,.0f}"))
 
-with t_kpi:
+# ==========================================
+# PESTAÑA 4: KPIs
+# ==========================================
+with tab_kpi:
     if not df.empty:
-        st.subheader("KPIs")
-        st.metric("Paños Promedio", f"{df['Paños'].mean():.2f}")
+        st.subheader("Indicadores Clave de Desempeño (KPI)")
+        k1, k2, k3 = st.columns(3)
+        
+        df_fac = df[df['Estado_Fac'] == 'FAC']
+        ticket = df_fac['Precio'].mean() if not df_fac.empty else 0
+        k1.metric("Ticket Promedio (FAC)", f"$ {ticket:,.0f}")
+        
+        intensidad = df['Paños'].mean()
+        k2.metric("Paños Promedio / Auto", f"{intensidad:.2f}")
+        
+        total_casos = len(df[df['Estado_Fac'].isin(['FAC', 'SI', 'NO'])])
+        casos_fac = len(df_fac)
+        ratio = (casos_fac / total_casos * 100) if total_casos > 0 else 0
+        k3.metric("% Conversión a Facturado", f"{ratio:.1f}%")
+
+        st.divider()
+        st.write("### Cantidad de Vehículos por Asesor")
+        fig_asesor = px.bar(df, x="Asesor", color="Estado_Fac", barmode="group")
+        st.plotly_chart(fig_asesor, use_container_width=True)
 
 with st.sidebar:
-    if st.button("🔄 Refrescar"):
+    if st.button("🔄 Refrescar Datos desde Sheet"):
         st.cache_data.clear()
-        if 'memoria_turnos_v11' in st.session_state: del st.session_state['memoria_turnos_v11']
+        if 'memoria_turnos_v11' in st.session_state:
+            del st.session_state['memoria_turnos_v11']
         st.rerun()
