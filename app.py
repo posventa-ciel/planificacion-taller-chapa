@@ -138,9 +138,15 @@ def obtener_datos_maestros():
         })
     return pd.DataFrame(filas)
 
-# --- MANEJO DE ESTADO TEMPORAL ---
+# --- MANEJO DE ESTADO TEMPORAL Y BLINDAJE ---
 if 'df_turnos_memoria' not in st.session_state:
     st.session_state.df_turnos_memoria = obtener_turnos()
+else:
+    # 🚨 PARCHE DE SEGURIDAD: Si la memoria quedó con una versión vieja, inyectamos las columnas nuevas
+    if 'Cancelado' not in st.session_state.df_turnos_memoria.columns:
+        st.session_state.df_turnos_memoria['Cancelado'] = False
+    if 'Hora' not in st.session_state.df_turnos_memoria.columns:
+        st.session_state.df_turnos_memoria['Hora'] = ""
 
 # --- EJECUCIÓN ---
 df = obtener_datos_maestros()
@@ -155,15 +161,13 @@ with tab_turnos:
     
     col1, col2 = st.columns([1, 2])
     with col1:
-        # Selector de Rango de Fechas con formato DD/MM/YYYY
         hoy = datetime.today().date()
         fechas_seleccionadas = st.date_input(
             "📅 Rango de Fechas (DD/MM/YYYY)", 
-            value=(hoy, hoy), # Por defecto muestra solo hoy, pero permite elegir rango
+            value=(hoy, hoy),
             format="DD/MM/YYYY"
         )
         
-        # Procesar si el usuario seleccionó uno o dos días
         if isinstance(fechas_seleccionadas, tuple):
             if len(fechas_seleccionadas) == 2:
                 f_inicio, f_fin = fechas_seleccionadas
@@ -183,7 +187,7 @@ with tab_turnos:
                 if st.form_submit_button("Agregar a la vista actual"):
                     if nueva_patente:
                         nuevo_ingreso = pd.DataFrame([{
-                            'Fecha': f_inicio, # Lo agrega en la fecha inicial del filtro
+                            'Fecha': f_inicio,
                             'Hora': 'Sin turno',
                             'Patente': nueva_patente.upper(),
                             'Vehiculo': nuevo_vehiculo.upper(),
@@ -199,14 +203,12 @@ with tab_turnos:
 
     st.divider()
 
-    # Filtrar turnos por el rango de fechas seleccionado
     mask = (st.session_state.df_turnos_memoria['Fecha'] >= f_inicio) & (st.session_state.df_turnos_memoria['Fecha'] <= f_fin)
     df_rango = st.session_state.df_turnos_memoria[mask].copy()
 
     if df_rango.empty:
         st.info("No hay turnos para las fechas seleccionadas.")
     else:
-        # Clasificamos: Pendientes, Recibidos y Cancelados
         df_rango['OR'] = df_rango['OR'].fillna("")
         df_cancelados = df_rango[df_rango['Cancelado'] == True]
         df_activos = df_rango[df_rango['Cancelado'] == False]
@@ -220,8 +222,8 @@ with tab_turnos:
             edited_df = st.data_editor(
                 df_pendientes,
                 column_config={
-                    "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), # Editable
-                    "Hora": st.column_config.TextColumn("Hora", disabled=False), # Editable
+                    "Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                    "Hora": st.column_config.TextColumn("Hora", disabled=False),
                     "Patente": st.column_config.TextColumn("Patente", disabled=True),
                     "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
                     "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA),
@@ -235,7 +237,6 @@ with tab_turnos:
                 key=f"editor_pendientes"
             )
             
-            # Guardado de la memoria
             if st.button("💾 Guardar Cambios"):
                 for idx, row in edited_df.iterrows():
                     st.session_state.df_turnos_memoria.loc[idx, 'Fecha'] = row['Fecha']
@@ -252,14 +253,12 @@ with tab_turnos:
 
         st.write("### 🏁 Turnos Recibidos (Con OR Abierta)")
         if not df_recibidos.empty:
-            # Formateamos la fecha visualmente para la tabla estática
             df_recibidos_view = df_recibidos[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor', 'OR']].copy()
             df_recibidos_view['Fecha'] = pd.to_datetime(df_recibidos_view['Fecha']).dt.strftime('%d/%m/%Y')
             st.dataframe(df_recibidos_view, hide_index=True, use_container_width=True)
         else:
             st.write("Aún no se ha abierto ninguna OR en estas fechas.")
             
-        # Sección oculta para ver los cancelados
         if not df_cancelados.empty:
             with st.expander("🗑️ Ver Turnos Cancelados"):
                 df_canc_view = df_cancelados[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Asesor']].copy()
