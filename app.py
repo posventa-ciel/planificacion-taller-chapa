@@ -5,8 +5,9 @@ from datetime import datetime, timedelta, date
 import re
 import time
 
-st.set_page_config(page_title="Gestión Taller Autociel", layout="wide")
-st.title("🚀 Sistema de Gestión Autociel")
+# 1. TÍTULO ACTUALIZADO
+st.set_page_config(page_title="Gestión Taller CENOA", layout="wide")
+st.title("🚀 Sistema de Gestión CENOA")
 
 # --- CONFIGURACIÓN ---
 ID_NUEVO_SHEET = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
@@ -169,10 +170,9 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
 
 # --- BLINDAJE DE MEMORIA ---
-# Pasamos a v9 para resetear las pruebas y aplicar las nuevas reglas estrictas
-if 'memoria_turnos_v9' not in st.session_state:
-    st.session_state.memoria_turnos_v9 = obtener_turnos()
-    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5', 'memoria_turnos_v6', 'memoria_turnos_v7', 'memoria_turnos_v8']:
+if 'memoria_turnos_v10' not in st.session_state:
+    st.session_state.memoria_turnos_v10 = obtener_turnos()
+    for old_key in ['df_turnos_memoria', 'memoria_turnos_v4', 'memoria_turnos_v5', 'memoria_turnos_v6', 'memoria_turnos_v7', 'memoria_turnos_v8', 'memoria_turnos_v9']:
         if old_key in st.session_state:
             del st.session_state[old_key]
 
@@ -187,8 +187,10 @@ tab_turnos, tab_prog, tab_fac, tab_kpi = st.tabs(["📋 Turnero Diario", "📅 P
 with tab_turnos:
     st.subheader("Recepción de Vehículos")
     
-    col1, col2 = st.columns([1, 2])
-    with col1:
+    # NUEVA DISTRIBUCIÓN DE COLUMNAS PARA EL FILTRO
+    col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
+    
+    with col_fecha:
         hoy = datetime.today().date()
         fechas_seleccionadas = st.date_input(
             "📅 Rango de Fechas (DD/MM/YYYY)", 
@@ -203,8 +205,12 @@ with tab_turnos:
                 f_inicio = f_fin = fechas_seleccionadas[0]
         else:
             f_inicio = f_fin = fechas_seleccionadas
+
+    # 3. FILTRO POR ASESOR
+    with col_asesor:
+        asesor_filtro = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA)
     
-    with col2:
+    with col_add:
         with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
             with st.form("form_sin_turno", clear_on_submit=True):
                 st.write("📝 **Completar datos del ingreso sin turno:**")
@@ -222,7 +228,9 @@ with tab_turnos:
                 c_tie, c_obs, c_ase = st.columns(3)
                 nuevo_tiempo = c_tie.text_input("Tiempo Entrega (Días)")
                 nueva_obs = c_obs.text_input("Observaciones")
-                nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA)
+                # Pre-seleccionar al asesor del filtro si no es "TODOS"
+                idx_asesor = ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0
+                nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=idx_asesor)
                 
                 st.caption("* Campos obligatorios para identificar el auto.")
                 
@@ -247,7 +255,7 @@ with tab_turnos:
                             'OR': "",
                             'Eliminar': False
                         }])
-                        st.session_state.memoria_turnos_v9 = pd.concat([st.session_state.memoria_turnos_v9, nuevo_ingreso], ignore_index=True)
+                        st.session_state.memoria_turnos_v10 = pd.concat([st.session_state.memoria_turnos_v10, nuevo_ingreso], ignore_index=True)
                         st.success(f"Ingreso sin turno agregado con éxito.")
                         time.sleep(0.5)
                         st.rerun()
@@ -256,17 +264,21 @@ with tab_turnos:
 
     st.divider()
 
-    mask = (st.session_state.memoria_turnos_v9['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v9['Fecha'] <= f_fin)
-    df_rango = st.session_state.memoria_turnos_v9[mask].copy()
+    # Filtramos primero por fecha
+    mask = (st.session_state.memoria_turnos_v10['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v10['Fecha'] <= f_fin)
+    df_rango = st.session_state.memoria_turnos_v10[mask].copy()
+
+    # Luego filtramos por Asesor si eligieron uno específico
+    if asesor_filtro != "TODOS":
+        df_rango = df_rango[df_rango['Asesor'] == asesor_filtro]
 
     if df_rango.empty:
-        st.info("No hay turnos para las fechas seleccionadas.")
+        st.info("No hay turnos para los filtros seleccionados.")
     else:
         df_rango['OR'] = df_rango['OR'].fillna("")
         df_cancelados = df_rango[df_rango['Cancelado'] == True]
         df_activos = df_rango[df_rango['Cancelado'] == False]
         
-        # NUEVA REGLA ESTRICTA: Debe tener OR, estar Recibido Y tener Fotos
         mascara_recibidos = (df_activos['OR'].str.strip() != "") & (df_activos['Recibido'] == True) & (df_activos['Fotos'] == True)
         
         df_pendientes = df_activos[~mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
@@ -284,7 +296,8 @@ with tab_turnos:
             edited_sin = pd.DataFrame()
             
             if not df_prog.empty:
-                st.write("#### 📅 Programados (Desde Sheet)")
+                # 2. SUBTÍTULO LIMPIO
+                st.write("#### 📅 Programados")
                 col_prog = ['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']
                 
                 edited_prog = st.data_editor(
@@ -337,35 +350,35 @@ with tab_turnos:
                 
                 if not edited_prog.empty:
                     for idx, row in edited_prog.iterrows():
-                        st.session_state.memoria_turnos_v9.loc[idx, 'Fecha'] = row['Fecha']
-                        st.session_state.memoria_turnos_v9.loc[idx, 'Hora'] = row['Hora']
-                        st.session_state.memoria_turnos_v9.loc[idx, 'Asesor'] = row['Asesor']
-                        st.session_state.memoria_turnos_v9.loc[idx, 'Recibido'] = row['Recibido']
-                        st.session_state.memoria_turnos_v9.loc[idx, 'Fotos'] = row['Fotos']
-                        st.session_state.memoria_turnos_v9.loc[idx, 'OR'] = row['OR']
-                        st.session_state.memoria_turnos_v9.loc[idx, 'Cancelado'] = row['Cancelado']
+                        st.session_state.memoria_turnos_v10.loc[idx, 'Fecha'] = row['Fecha']
+                        st.session_state.memoria_turnos_v10.loc[idx, 'Hora'] = row['Hora']
+                        st.session_state.memoria_turnos_v10.loc[idx, 'Asesor'] = row['Asesor']
+                        st.session_state.memoria_turnos_v10.loc[idx, 'Recibido'] = row['Recibido']
+                        st.session_state.memoria_turnos_v10.loc[idx, 'Fotos'] = row['Fotos']
+                        st.session_state.memoria_turnos_v10.loc[idx, 'OR'] = row['OR']
+                        st.session_state.memoria_turnos_v10.loc[idx, 'Cancelado'] = row['Cancelado']
 
                 if not edited_sin.empty:
                     for idx, row in edited_sin.iterrows():
                         if row.get('Eliminar', False):
                             indices_a_borrar.append(idx)
                         else:
-                            st.session_state.memoria_turnos_v9.loc[idx, 'Fecha'] = row['Fecha']
-                            st.session_state.memoria_turnos_v9.loc[idx, 'Hora'] = row['Hora']
-                            st.session_state.memoria_turnos_v9.loc[idx, 'Asesor'] = row['Asesor']
-                            st.session_state.memoria_turnos_v9.loc[idx, 'Recibido'] = row['Recibido']
-                            st.session_state.memoria_turnos_v9.loc[idx, 'Fotos'] = row['Fotos']
-                            st.session_state.memoria_turnos_v9.loc[idx, 'OR'] = row['OR']
-                            st.session_state.memoria_turnos_v9.loc[idx, 'Cancelado'] = row['Cancelado']
+                            st.session_state.memoria_turnos_v10.loc[idx, 'Fecha'] = row['Fecha']
+                            st.session_state.memoria_turnos_v10.loc[idx, 'Hora'] = row['Hora']
+                            st.session_state.memoria_turnos_v10.loc[idx, 'Asesor'] = row['Asesor']
+                            st.session_state.memoria_turnos_v10.loc[idx, 'Recibido'] = row['Recibido']
+                            st.session_state.memoria_turnos_v10.loc[idx, 'Fotos'] = row['Fotos']
+                            st.session_state.memoria_turnos_v10.loc[idx, 'OR'] = row['OR']
+                            st.session_state.memoria_turnos_v10.loc[idx, 'Cancelado'] = row['Cancelado']
                 
                 if indices_a_borrar:
-                    st.session_state.memoria_turnos_v9.drop(indices_a_borrar, inplace=True)
+                    st.session_state.memoria_turnos_v10.drop(indices_a_borrar, inplace=True)
                     
                 st.success("Taller actualizado.")
                 time.sleep(0.5)
                 st.rerun() 
         else:
-            st.success("¡Excelente! No quedan ingresos pendientes para estas fechas.")
+            st.success("¡Excelente! No quedan ingresos pendientes para estos filtros.")
 
         st.divider()
 
@@ -374,7 +387,6 @@ with tab_turnos:
             st.caption("💡 ¿Te equivocaste de auto o de OR? Borrá el número de OR o quitale una tilde, apretá 'Guardar Correcciones' y volverá a subir a Pendientes.")
             col_reci = ['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Recibido', 'Fotos', 'OR']
             
-            # NUEVO: Tabla interactiva para deshacer recibidos
             edited_recibidos = st.data_editor(
                 df_recibidos[col_reci],
                 column_config={
@@ -396,15 +408,15 @@ with tab_turnos:
             
             if st.button("💾 Guardar Correcciones"):
                 for idx, row in edited_recibidos.iterrows():
-                    st.session_state.memoria_turnos_v9.loc[idx, 'Recibido'] = row['Recibido']
-                    st.session_state.memoria_turnos_v9.loc[idx, 'Fotos'] = row['Fotos']
-                    st.session_state.memoria_turnos_v9.loc[idx, 'OR'] = row['OR']
+                    st.session_state.memoria_turnos_v10.loc[idx, 'Recibido'] = row['Recibido']
+                    st.session_state.memoria_turnos_v10.loc[idx, 'Fotos'] = row['Fotos']
+                    st.session_state.memoria_turnos_v10.loc[idx, 'OR'] = row['OR']
                 
                 st.success("Correcciones aplicadas.")
                 time.sleep(0.5)
                 st.rerun()
         else:
-            st.write("Aún no se ha abierto ninguna OR en estas fechas.")
+            st.write("Aún no se ha abierto ninguna OR para estos filtros.")
             
         if not df_cancelados.empty:
             st.write("### 🗑️ Turnos Cancelados")
@@ -484,6 +496,6 @@ with tab_kpi:
 with st.sidebar:
     if st.button("🔄 Refrescar Datos desde Sheet"):
         st.cache_data.clear()
-        if 'memoria_turnos_v9' in st.session_state:
-            del st.session_state['memoria_turnos_v9']
+        if 'memoria_turnos_v10' in st.session_state:
+            del st.session_state['memoria_turnos_v10']
         st.rerun()
