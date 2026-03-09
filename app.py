@@ -360,10 +360,8 @@ with tab_prog:
         with col_filtro:
             asesor_filtro_prog = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA, key="filtro_asesor_prog")
             
-        # NUEVA LÓGICA DE FILTRADO: Buscamos solo el primer nombre
         df_prog_filtrado = df.copy()
         if asesor_filtro_prog != "TODOS":
-            # Si eligió "CESAR OLIVA", se queda con "CESAR" y busca eso en el DataFrame
             nombre_corto = asesor_filtro_prog.split()[0].upper()
             df_prog_filtrado = df_prog_filtrado[df_prog_filtrado['Asesor'].str.contains(nombre_corto, case=False, na=False)]
 
@@ -427,22 +425,58 @@ with tab_prog:
 # ==========================================
 with tab_fac:
     if not df.empty:
-        st.subheader("Análisis de Facturación")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Facturado (FAC)", f"$ {df[df['Estado_Fac'] == 'FAC']['Precio'].sum():,.0f}")
-        m2.metric("Confirmado (SI)", f"$ {df[df['Estado_Fac'] == 'SI']['Precio'].sum():,.0f}")
-        m3.metric("Pendiente (NO)", f"$ {df[df['Estado_Fac'] == 'NO']['Precio'].sum():,.0f}")
+        st.subheader("Análisis de Facturación y Paños")
+        
+        # Filtros para métricas
+        df_fac = df[df['Estado_Fac'] == 'FAC']
+        df_term_pend = df[df['Estado_Taller'].str.contains("TERM PEND", na=False)]
+        df_proceso = df[df['Estado_Taller'].str.contains("PROCESO", na=False)]
+        df_detenidos = df[df['Estado_Taller'].str.contains("DETENIDO", na=False)]
+        
+        # Cálculos globales
+        pesos_fac = df_fac['Precio'].sum()
+        panos_fac = df_fac['Paños'].sum()
+        ratio_peso_pano = (pesos_fac / panos_fac) if panos_fac > 0 else 0
+        
+        st.write("### 💰 Rendimiento Actual")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Facturado (Pesos)", f"$ {pesos_fac:,.0f}")
+        m2.metric("Facturado (Paños)", f"{panos_fac:.1f}")
+        m3.metric("Ratio ($ / Paño)", f"$ {ratio_peso_pano:,.0f}")
+        m4.metric("Confirmado (Pesos - SI)", f"$ {df[df['Estado_Fac'] == 'SI']['Precio'].sum():,.0f}")
         
         st.divider()
+        
+        st.write("### 🚨 Oportunidades y Proyección de Taller")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Terminados (Pte. Facturar)", f"{df_term_pend['Paños'].sum():.1f} paños", "¡Apurar Asesores!", delta_color="inverse")
+        c2.metric("Plata Inmovilizada", f"$ {df_term_pend['Precio'].sum():,.0f}", "Terminados no facturados", delta_color="inverse")
+        c3.metric("En Proceso (Taller)", f"{df_proceso['Paños'].sum():.1f} paños", "Proyección a fin de mes")
+        c4.metric("Detenidos", f"{df_detenidos['Paños'].sum():.1f} paños", "Riesgo", delta_color="inverse")
+        
+        st.divider()
+        
         col_a, col_b = st.columns(2)
         with col_a:
-            st.write("### 👥 Por Grupo")
+            st.write("### 👥 Pesos por Grupo y Estado")
             res_grupo = df.groupby(['Grupo', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
             st.table(res_grupo.style.format("$ {:,.0f}"))
+            
+            st.write("### 🧑‍🔧 Paños por Grupo y Estado Taller")
+            res_grupo_panos = df.groupby(['Grupo', 'Estado_Taller'])['Paños'].sum().unstack(fill_value=0)
+            st.dataframe(res_grupo_panos.style.format("{:.1f}"), use_container_width=True)
+            
         with col_b:
-            st.write("### 👔 Por Asesor")
+            st.write("### 👔 Pesos por Asesor")
             res_asesor = df.groupby(['Asesor', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
             st.table(res_asesor.style.format("$ {:,.0f}"))
+            
+            st.write("### ⏳ Term. Pendientes a facturar por Asesor")
+            if not df_term_pend.empty:
+                res_pendientes = df_term_pend.groupby('Asesor')[['Paños', 'Precio']].sum().reset_index()
+                st.dataframe(res_pendientes.style.format({'Precio': "$ {:,.0f}", 'Paños': "{:.1f}"}), hide_index=True, use_container_width=True)
+            else:
+                st.success("¡Excelente! No hay vehículos terminados pendientes de facturar.")
 
 # ==========================================
 # PESTAÑA 4: KPIs
