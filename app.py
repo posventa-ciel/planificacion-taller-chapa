@@ -155,6 +155,9 @@ def obtener_datos_maestros():
         fecha_promesa_display = f_fin.date() if f_fin is not None else None
         if f_fin is None:
             f_fin = datetime.now() + timedelta(days=3650)
+            
+        # Determinar mes para la tabla de históricos
+        mes_hist = f_fin.strftime('%Y-%m') if f_fin and f_fin.year < 2030 else "SIN FECHA"
         
         try:
             texto_panos = str(row.get('PAÑOS', '1')).replace(',', '.')
@@ -170,15 +173,20 @@ def obtener_datos_maestros():
 
         estado_taller = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper()
         if not estado_taller: estado_taller = "SIN ESTADO"
+        
+        cliente_val = str(row.get('CLIENTE', 'PARTICULAR')).replace('nan', '').strip().upper()
+        if not cliente_val: cliente_val = "PARTICULAR"
 
         filas.append({
             'Grupo': row.get('GRUPO_ORIGEN'),
             'Asesor': str(row.get('ASESOR', 'SIN ASESOR')).strip().upper(),
+            'Cliente': cliente_val,
             'Patente': str(row.get('PATENTE', '')),
             'Vehiculo': str(row.get('VEHICULO', '')),
             'Inicio': f_inicio,
             'Fin': f_fin,
             'Fecha_Promesa_Disp': fecha_promesa_display,
+            'Mes_Hist': mes_hist,
             'Paños': panos,
             'Estado_Fac': str(row.get('FAC', '')).strip().upper(),
             'Estado_Taller': estado_taller,
@@ -196,7 +204,7 @@ if 'memoria_turnos_v11' not in st.session_state:
 # --- EJECUCIÓN ---
 df = obtener_datos_maestros()
 
-tab_turnos, tab_prog, tab_fac, tab_kpi = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs"])
+tab_turnos, tab_prog, tab_fac, tab_kpi, tab_hist = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs", "📅 Históricos"])
 
 # ==========================================
 # PESTAÑA 1: TURNERO DIARIO (IGUAL QUE ANTES)
@@ -350,7 +358,7 @@ with tab_turnos:
             st.dataframe(df_canc_view, hide_index=True, use_container_width=True)
 
 # ==========================================
-# PESTAÑA 2: PROGRAMACIÓN DEL TALLER (CON FILTRO CORREGIDO)
+# PESTAÑA 2: PROGRAMACIÓN DEL TALLER
 # ==========================================
 with tab_prog:
     st.subheader("🛠️ Programación y Estado del Taller")
@@ -421,19 +429,22 @@ with tab_prog:
                 st.info("No hay vehículos para mostrar en el gráfico.")
 
 # ==========================================
-# PESTAÑA 3: FACTURACIÓN
+# PESTAÑA 3: FACTURACIÓN (NUEVO DETALLE Y DESGLOSE POR EMPRESA)
 # ==========================================
 with tab_fac:
     if not df.empty:
         st.subheader("Análisis de Facturación y Paños")
         
-        # Filtros para métricas
+        # Filtros de Estados específicos para cálculos
         df_fac = df[df['Estado_Fac'] == 'FAC']
-        df_term_pend = df[df['Estado_Taller'].str.contains("TERM PEND", na=False)]
         df_proceso = df[df['Estado_Taller'].str.contains("PROCESO", na=False)]
         df_detenidos = df[df['Estado_Taller'].str.contains("DETENIDO", na=False)]
         
-        # Cálculos globales
+        df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
+        df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
+        df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
+        
+        # Rendimiento Global
         pesos_fac = df_fac['Precio'].sum()
         panos_fac = df_fac['Paños'].sum()
         ratio_peso_pano = (pesos_fac / panos_fac) if panos_fac > 0 else 0
@@ -447,36 +458,34 @@ with tab_fac:
         
         st.divider()
         
-        st.write("### 🚨 Oportunidades y Proyección de Taller")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Terminados (Pte. Facturar)", f"{df_term_pend['Paños'].sum():.1f} paños", "¡Apurar Asesores!", delta_color="inverse")
-        c2.metric("Plata Inmovilizada", f"$ {df_term_pend['Precio'].sum():,.0f}", "Terminados no facturados", delta_color="inverse")
-        c3.metric("En Proceso (Taller)", f"{df_proceso['Paños'].sum():.1f} paños", "Proyección a fin de mes")
-        c4.metric("Detenidos", f"{df_detenidos['Paños'].sum():.1f} paños", "Riesgo", delta_color="inverse")
+        # Oportunidades y Proyección
+        st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
+        c_e1, c_e2, c_e3 = st.columns(3)
+        c_e1.metric("Terminado Pend. Facturar", f"{df_tpf['Paños'].sum():.1f} paños", f"$ {df_tpf['Precio'].sum():,.0f}", delta_color="inverse")
+        c_e2.metric("Terminado Pend. Entregar", f"{df_tpe['Paños'].sum():.1f} paños", f"$ {df_tpe['Precio'].sum():,.0f}", delta_color="inverse")
+        c_e3.metric("Entregado Pend. Facturar", f"{df_epf['Paños'].sum():.1f} paños", f"$ {df_epf['Precio'].sum():,.0f}", delta_color="inverse")
         
         st.divider()
         
+        # Tablas Inferiores
         col_a, col_b = st.columns(2)
         with col_a:
             st.write("### 👥 Pesos por Grupo y Estado")
             res_grupo = df.groupby(['Grupo', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
             st.table(res_grupo.style.format("$ {:,.0f}"))
             
-            st.write("### 🧑‍🔧 Paños por Grupo y Estado Taller")
-            res_grupo_panos = df.groupby(['Grupo', 'Estado_Taller'])['Paños'].sum().unstack(fill_value=0)
-            st.dataframe(res_grupo_panos.style.format("{:.1f}"), use_container_width=True)
+            st.write("### 🏢 Desglose General por Empresa (Cliente)")
+            res_empresa = df.groupby('Cliente')[['Paños', 'Precio']].sum().reset_index().sort_values(by='Paños', ascending=False)
+            st.dataframe(res_empresa.style.format({'Precio': "$ {:,.0f}", 'Paños': "{:.1f}"}), hide_index=True, use_container_width=True)
             
         with col_b:
             st.write("### 👔 Pesos por Asesor")
             res_asesor = df.groupby(['Asesor', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
             st.table(res_asesor.style.format("$ {:,.0f}"))
             
-            st.write("### ⏳ Term. Pendientes a facturar por Asesor")
-            if not df_term_pend.empty:
-                res_pendientes = df_term_pend.groupby('Asesor')[['Paños', 'Precio']].sum().reset_index()
-                st.dataframe(res_pendientes.style.format({'Precio': "$ {:,.0f}", 'Paños': "{:.1f}"}), hide_index=True, use_container_width=True)
-            else:
-                st.success("¡Excelente! No hay vehículos terminados pendientes de facturar.")
+            st.write("### 🧑‍🔧 Paños por Grupo y Estado Taller")
+            res_grupo_panos = df.groupby(['Grupo', 'Estado_Taller'])['Paños'].sum().unstack(fill_value=0)
+            st.dataframe(res_grupo_panos.style.format("{:.1f}"), use_container_width=True)
 
 # ==========================================
 # PESTAÑA 4: KPIs
@@ -486,15 +495,15 @@ with tab_kpi:
         st.subheader("Indicadores Clave de Desempeño (KPI)")
         k1, k2, k3 = st.columns(3)
         
-        df_fac = df[df['Estado_Fac'] == 'FAC']
-        ticket = df_fac['Precio'].mean() if not df_fac.empty else 0
+        df_fac_kpi = df[df['Estado_Fac'] == 'FAC']
+        ticket = df_fac_kpi['Precio'].mean() if not df_fac_kpi.empty else 0
         k1.metric("Ticket Promedio (FAC)", f"$ {ticket:,.0f}")
         
         intensidad = df['Paños'].mean()
         k2.metric("Paños Promedio / Auto", f"{intensidad:.2f}")
         
         total_casos = len(df[df['Estado_Fac'].isin(['FAC', 'SI', 'NO'])])
-        casos_fac = len(df_fac)
+        casos_fac = len(df_fac_kpi)
         ratio = (casos_fac / total_casos * 100) if total_casos > 0 else 0
         k3.metric("% Conversión a Facturado", f"{ratio:.1f}%")
 
@@ -502,6 +511,37 @@ with tab_kpi:
         st.write("### Cantidad de Vehículos por Asesor")
         fig_asesor = px.bar(df, x="Asesor", color="Estado_Fac", barmode="group")
         st.plotly_chart(fig_asesor, use_container_width=True)
+
+# ==========================================
+# PESTAÑA 5: HISTÓRICOS (NUEVA PESTAÑA)
+# ==========================================
+with tab_hist:
+    if not df.empty:
+        st.subheader("📅 Histórico Mensual")
+        st.write("Evolución de paños y pesos a lo largo del tiempo, agrupados por mes de finalización y empresa.")
+        
+        # Filtramos los que tienen fecha válida y los ordenamos cronológicamente
+        df_hist = df[df['Mes_Hist'] != 'SIN FECHA'].sort_values('Mes_Hist')
+        
+        if not df_hist.empty:
+            c_h1, c_h2 = st.columns(2)
+            with c_h1:
+                st.write("#### 🧑‍🔧 Paños por Mes y Empresa")
+                pivot_panos = pd.pivot_table(df_hist, values='Paños', index='Mes_Hist', columns='Cliente', aggfunc='sum', fill_value=0)
+                st.dataframe(pivot_panos.style.format("{:.1f}"), use_container_width=True)
+                
+            with c_h2:
+                st.write("#### 💰 Pesos por Mes y Empresa")
+                pivot_pesos = pd.pivot_table(df_hist, values='Precio', index='Mes_Hist', columns='Cliente', aggfunc='sum', fill_value=0)
+                st.dataframe(pivot_pesos.style.format("$ {:,.0f}"), use_container_width=True)
+                
+            st.divider()
+            
+            st.write("#### 📈 Evolución de Paños")
+            fig_hist = px.bar(df_hist, x="Mes_Hist", y="Paños", color="Cliente", barmode="group", title="Paños Facturados/Proyectados por Mes")
+            st.plotly_chart(fig_hist, use_container_width=True)
+        else:
+            st.info("No hay datos con fechas válidas para mostrar el historial.")
 
 with st.sidebar:
     if st.button("🔄 Refrescar Datos desde Sheet"):
