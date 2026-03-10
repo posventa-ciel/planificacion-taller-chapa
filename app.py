@@ -120,10 +120,15 @@ def obtener_datos_maestros():
         try:
             url = f"{URL_BASE}{gid}"
             d = pd.read_csv(url, dtype=str)
-            if len(d.columns) > 19:
-                cols = list(d.columns); cols[19] = 'ESTADO_TALLER'; d.columns = cols
-            if len(d.columns) > 8:
-                cols = list(d.columns); cols[8] = 'FECHA_PROMESA_I'; d.columns = cols
+            
+            # FORZAMOS LA LECTURA ESTRICTA DE LAS COLUMNAS POR SU POSICIÓN
+            cols = list(d.columns)
+            if len(cols) > 19: cols[19] = 'ESTADO_TALLER'
+            if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        # Columna P
+            if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  # Columna L
+            if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         # Columna I
+            d.columns = cols
+            
             d.columns = d.columns.str.strip().str.upper()
             if 'PATENTE' in d.columns:
                 d = d.dropna(subset=['PATENTE']); d = d[d['PATENTE'].str.strip() != ""]; d['GRUPO_ORIGEN'] = n; dfs.append(d)
@@ -136,24 +141,35 @@ def obtener_datos_maestros():
         fecha_promesa_display = f_fin.date() if f_fin is not None else None
         if f_fin is None: f_fin = datetime.now() + timedelta(days=3650)
         mes_hist = f_fin.strftime('%Y-%m') if f_fin and f_fin.year < 2030 else "SIN FECHA"
+        
         try:
             texto_panos = str(row.get('PAÑOS', '1')).replace(',', '.')
             numeros = re.findall(r"[-+]?\d*\.\d+|\d+", texto_panos)
             panos = float(numeros[0]) if numeros else 1.0
         except: panos = 1.0
+        
         f_inicio = f_fin - timedelta(days=max(1, int(panos)))
+        
         precio_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
         try: precio_val = float(precio_raw) if precio_raw != "" else 0.0
         except: precio_val = 0.0
+        
         estado_taller = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper()
         if not estado_taller: estado_taller = "SIN ESTADO"
-        cliente_val = str(row.get('CLIENTE', 'PARTICULAR')).replace('nan', '').strip().upper()
+        
+        # Leemos forzosamente la Empresa (Columna P)
+        cliente_val = str(row.get('EMPRESA_TALLER', 'PARTICULAR')).replace('nan', '').strip().upper()
         if not cliente_val: cliente_val = "PARTICULAR"
+        
+        # Leemos forzosamente las Observaciones (Columna L)
+        obs_val = str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
+
         filas.append({
             'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': str(row.get('ASESOR', 'SIN ASESOR')).strip().upper(),
             'Cliente': cliente_val, 'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')),
             'Inicio': f_inicio, 'Fin': f_fin, 'Fecha_Promesa_Disp': fecha_promesa_display, 'Mes_Hist': mes_hist,
-            'Paños': panos, 'Estado_Fac': str(row.get('FAC', '')).strip().upper(), 'Estado_Taller': estado_taller, 'Precio': precio_val
+            'Paños': panos, 'Estado_Fac': str(row.get('FAC', '')).strip().upper(), 'Estado_Taller': estado_taller, 
+            'Precio': precio_val, 'Observaciones': obs_val
         })
     return pd.DataFrame(filas)
 
@@ -161,7 +177,9 @@ if 'memoria_turnos_v11' not in st.session_state:
     st.session_state.memoria_turnos_v11 = obtener_turnos()
 
 df = obtener_datos_maestros()
-tab_turnos, tab_prog, tab_fac, tab_kpi, tab_hist = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs", "📅 Históricos"])
+
+# AGREGAMOS LA NUEVA PESTAÑA AL MENÚ
+tab_turnos, tab_prog, tab_fac, tab_kpi, tab_hist, tab_portal = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs", "📅 Históricos", "🏢 Portal Empresas"])
 
 # ==========================================
 # PESTAÑA 1: TURNERO DIARIO
@@ -320,16 +338,11 @@ with tab_fac:
     if not df.empty:
         st.subheader("Análisis de Facturación y Paños")
         
-        # Filtros de Estados específicos para cálculos
         df_fac = df[df['Estado_Fac'] == 'FAC']
-        df_proceso = df[df['Estado_Taller'].str.contains("PROCESO", na=False)]
-        df_detenidos = df[df['Estado_Taller'].str.contains("DETENIDO", na=False)]
-        
         df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
         df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
         df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
         
-        # Rendimiento Global
         pesos_fac = df_fac['Precio'].sum()
         panos_fac = df_fac['Paños'].sum()
         ratio_peso_pano = (pesos_fac / panos_fac) if panos_fac > 0 else 0
@@ -343,7 +356,6 @@ with tab_fac:
         
         st.divider()
         
-        # Oportunidades y Proyección
         st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
         c_e1, c_e2, c_e3 = st.columns(3)
         c_e1.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Facturar</div><div class="metric-value-money">${df_tpf["Precio"].sum():,.0f}</div><div class="metric-subtitle-red">⚠️ {df_tpf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
@@ -352,14 +364,8 @@ with tab_fac:
         
         st.divider()
 
-        # ==========================================
-        # NUEVA SECCIÓN: ANÁLISIS DE PRODUCCIÓN
-        # ==========================================
         st.write("### 📊 Análisis de Producción: Grupos y Asesores")
-        
-        # Preparamos los datos: Clasificamos en "Facturado" y "Proyectado/Por Facturar"
         df_analisis = df.copy()
-        # Todo lo que no es FAC lo consideramos en el pipeline ("Por Facturar") para mostrar la oportunidad
         df_analisis['Estado_Resumen'] = df_analisis['Estado_Fac'].apply(lambda x: 'Facturado' if x == 'FAC' else 'Proyectado (Por Facturar)')
 
         tab_grupos, tab_asesores, tab_empresas = st.tabs(["👥 Comparativa por Grupos", "👔 Comparativa por Asesores", "🏢 Desglose por Empresa"])
@@ -367,52 +373,34 @@ with tab_fac:
         with tab_grupos:
             st.markdown("Comparativa de producción real y proyección a futuro por equipo de trabajo.")
             grupo_stats = df_analisis.groupby(['Grupo', 'Estado_Resumen'])[['Paños', 'Precio']].sum().reset_index()
-            
             col_g_tab, col_g_g1, col_g_g2 = st.columns([1, 1.5, 1.5])
             with col_g_tab:
-                # Tabla resumen
                 res_grupo_tabla = df_analisis.groupby(['Grupo', 'Estado_Resumen'])[['Paños', 'Precio']].sum().unstack(fill_value=0)
-                # Formateo amigable
                 res_grupo_tabla.columns = [f"{col[1]} ({col[0]})" for col in res_grupo_tabla.columns]
                 st.dataframe(res_grupo_tabla.style.format("{:,.0f}"), use_container_width=True)
-
             with col_g_g1:
-                # Gráfico Paños
-                fig_g_panos = px.bar(grupo_stats, x='Grupo', y='Paños', color='Estado_Resumen', barmode='group', 
-                                     text_auto='.1f', title='📦 Paños Totales', 
-                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#00A8E8'})
+                fig_g_panos = px.bar(grupo_stats, x='Grupo', y='Paños', color='Estado_Resumen', barmode='group', text_auto='.1f', title='📦 Paños Totales', color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#00A8E8'})
                 fig_g_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_g_panos, use_container_width=True)
-
             with col_g_g2:
-                # Gráfico Pesos
-                fig_g_pesos = px.bar(grupo_stats, x='Grupo', y='Precio', color='Estado_Resumen', barmode='group', 
-                                     text_auto='$.2s', title='💰 Montos en Pesos',
-                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#00A8E8'})
+                fig_g_pesos = px.bar(grupo_stats, x='Grupo', y='Precio', color='Estado_Resumen', barmode='group', text_auto='$.2s', title='💰 Montos en Pesos', color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#00A8E8'})
                 fig_g_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_g_pesos, use_container_width=True)
 
         with tab_asesores:
             st.markdown("Rendimiento individual y cartera de vehículos asignada por asesor.")
             asesor_stats = df_analisis.groupby(['Asesor', 'Estado_Resumen'])[['Paños', 'Precio']].sum().reset_index()
-            
             col_a_tab, col_a_g1, col_a_g2 = st.columns([1, 1.5, 1.5])
             with col_a_tab:
                 res_asesor_tabla = df_analisis.groupby(['Asesor', 'Estado_Resumen'])[['Paños', 'Precio']].sum().unstack(fill_value=0)
                 res_asesor_tabla.columns = [f"{col[1]} ({col[0]})" for col in res_asesor_tabla.columns]
                 st.dataframe(res_asesor_tabla.style.format("{:,.0f}"), use_container_width=True)
-
             with col_a_g1:
-                fig_a_panos = px.bar(asesor_stats, x='Asesor', y='Paños', color='Estado_Resumen', barmode='group', 
-                                     text_auto='.1f', title='📦 Paños por Asesor',
-                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#ffc107'})
+                fig_a_panos = px.bar(asesor_stats, x='Asesor', y='Paños', color='Estado_Resumen', barmode='group', text_auto='.1f', title='📦 Paños por Asesor', color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#ffc107'})
                 fig_a_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_a_panos, use_container_width=True)
-
             with col_a_g2:
-                fig_a_pesos = px.bar(asesor_stats, x='Asesor', y='Precio', color='Estado_Resumen', barmode='group', 
-                                     text_auto='$.2s', title='💰 Montos por Asesor',
-                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#ffc107'})
+                fig_a_pesos = px.bar(asesor_stats, x='Asesor', y='Precio', color='Estado_Resumen', barmode='group', text_auto='$.2s', title='💰 Montos por Asesor', color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#ffc107'})
                 fig_a_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_a_pesos, use_container_width=True)
 
@@ -423,7 +411,6 @@ with tab_fac:
                 res_empresa = df.groupby('Cliente')[['Paños', 'Precio']].sum().reset_index().sort_values(by='Paños', ascending=False)
                 st.dataframe(res_empresa.style.format({'Precio': "$ {:,.0f}", 'Paños': "{:.1f}"}), hide_index=True, use_container_width=True)
             with col_e2:
-                # Un gráfico de torta acá si queda bien para ver cómo se reparte la cuota de clientes
                 if not res_empresa.empty:
                     fig_empresa = px.pie(res_empresa, values='Precio', names='Cliente', hole=0.4, title="Participación de Clientes (Volumen en $)")
                     st.plotly_chart(fig_empresa, use_container_width=True)
@@ -475,6 +462,52 @@ with tab_hist:
             fig_hist = px.bar(df_hist, x="Mes_Hist", y="Paños", color="Cliente", barmode="group", title="Paños Facturados/Proyectados por Mes")
             st.plotly_chart(fig_hist, use_container_width=True)
         else: st.info("No hay datos con fechas válidas para mostrar el historial.")
+
+# ==========================================
+# PESTAÑA 6: PORTAL EMPRESAS (NUEVO)
+# ==========================================
+with tab_portal:
+    if not df.empty:
+        st.subheader("🏢 Seguimiento de Unidades: Empresas del Grupo")
+        st.write("Vista exclusiva para que los responsables de AUTOSOL, AUTOLUX y CIEL puedan ver el estado de sus vehículos, fechas de entrega y observaciones.")
+        
+        # Filtramos buscando palabras clave en el nombre de la empresa
+        df_grupo = df[df['Cliente'].str.contains('SOL|LUX|CIEL', case=False, na=False)].copy()
+        
+        if not df_grupo.empty:
+            c_filtro, _ = st.columns([1, 2])
+            with c_filtro:
+                empresa_filtro = st.selectbox("Seleccionar Empresa", ["TODAS", "AUTOSOL", "AUTOLUX", "CIEL / AUTOCIEL"])
+            
+            df_vista_emp = df_grupo.copy()
+            if empresa_filtro == "AUTOSOL":
+                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('SOL', case=False, na=False)]
+            elif empresa_filtro == "AUTOLUX":
+                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('LUX', case=False, na=False)]
+            elif empresa_filtro == "CIEL / AUTOCIEL":
+                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('CIEL', case=False, na=False)]
+            
+            # Tarjetas de resumen para la empresa seleccionada
+            en_proceso = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("PROCESO", na=False)])
+            detenidos = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("DETENIDO", na=False)])
+            terminados = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("TERM", na=False)])
+            
+            ce1, ce2, ce3 = st.columns(3)
+            ce1.markdown(f'<div class="metric-card"><div class="metric-title">En Proceso</div><div class="metric-value-number">{en_proceso}</div><div class="metric-subtitle-blue">Vehículos en Taller</div></div>', unsafe_allow_html=True)
+            ce2.markdown(f'<div class="metric-card"><div class="metric-title">Detenidos (Con Novedad)</div><div class="metric-value-number" style="color:#dc3545;">{detenidos}</div><div class="metric-subtitle-red">Revisar Observaciones</div></div>', unsafe_allow_html=True)
+            ce3.markdown(f'<div class="metric-card"><div class="metric-title">Terminados (Pte. Entregar)</div><div class="metric-value-number" style="color:#28a745;">{terminados}</div><div class="metric-subtitle-green">Listos / Facturando</div></div>', unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # Formatear la vista de la tabla
+            df_vista_emp['Fecha Entrega'] = df_vista_emp['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+            
+            vista_columnas = ['Cliente', 'Vehiculo', 'Patente', 'Estado_Taller', 'Fecha Entrega', 'Asesor', 'Observaciones']
+            df_mostrar = df_vista_emp[vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
+            
+            st.dataframe(df_mostrar, hide_index=True, use_container_width=True)
+        else:
+            st.info("No hay vehículos registrados para las empresas del grupo en este momento.")
 
 with st.sidebar:
     if st.button("🔄 Refrescar Datos desde Sheet"):
