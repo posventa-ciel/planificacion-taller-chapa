@@ -83,7 +83,8 @@ def parsear_fecha_español(texto):
     except: pass
     return None
 
-@st.cache_data(ttl=60)
+# Caché configurada a 300 segundos (5 minutos)
+@st.cache_data(ttl=300)
 def obtener_turnos():
     columnas_base = ['Tipo', 'Fecha', 'Hora', 'Vehiculo', 'Patente', 'Asesor', 'Precio', 'Paños', 'Observaciones', 'Tiempo_Entrega', 'Cliente', 'Seguro', 'Recibido', 'Fotos', 'Cancelado', 'OR', 'Eliminar']
     if GID_TURNOS == "PONER_AQUI_GID_TURNOS": return pd.DataFrame(columns=columnas_base)
@@ -113,7 +114,8 @@ def obtener_turnos():
         return pd.DataFrame(filas)
     except Exception as e: return pd.DataFrame(columns=columnas_base)
 
-@st.cache_data(ttl=60)
+# Caché configurada a 300 segundos (5 minutos)
+@st.cache_data(ttl=300)
 def obtener_datos_maestros():
     dfs = []
     for n, gid in GIDS.items():
@@ -187,7 +189,15 @@ if 'memoria_turnos_v11' not in st.session_state:
 
 df = obtener_datos_maestros()
 
-tab_turnos, tab_prog, tab_fac, tab_kpi, tab_hist, tab_portal = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs", "📅 Históricos", "🏢 Portal Empresas"])
+# --- REORDEN DE PESTAÑAS SEGÚN FLUJO DE VIDA ---
+tab_turnos, tab_prog, tab_portal, tab_fac, tab_kpi, tab_hist = st.tabs([
+    "📋 Turnero Diario", 
+    "🛠️ Programación", 
+    "🏢 PORTAL EMPRESAS (Externo)", 
+    "💰 Facturación", 
+    "📊 KPIs", 
+    "📅 Históricos"
+])
 
 # ==========================================
 # PESTAÑA 1: TURNERO DIARIO
@@ -340,7 +350,98 @@ with tab_prog:
             else: st.info("No hay vehículos para mostrar en el gráfico.")
 
 # ==========================================
-# PESTAÑA 3: FACTURACIÓN
+# PESTAÑA 3: PORTAL EMPRESAS (REUBICADA)
+# ==========================================
+with tab_portal:
+    if not df.empty:
+        st.subheader("🏢 Seguimiento de Unidades: Empresas del Grupo")
+        st.write("Vista exclusiva para que los responsables de AUTOSOL, AUTOLUX y CIEL puedan ver el estado de sus vehículos, fechas de entrega y observaciones.")
+        
+        df_grupo = df[df['Cliente'].str.contains('SOL|LUX|CIEL', case=False, na=False)].copy()
+        
+        if not df_grupo.empty:
+            c_filtro, _ = st.columns([1, 2])
+            with c_filtro:
+                empresa_filtro = st.selectbox("Seleccionar Empresa", ["TODAS", "AUTOSOL", "AUTOLUX", "CIEL / AUTOCIEL"])
+            
+            df_vista_emp = df_grupo.copy()
+            if empresa_filtro == "AUTOSOL":
+                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('SOL', case=False, na=False)]
+            elif empresa_filtro == "AUTOLUX":
+                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('LUX', case=False, na=False)]
+            elif empresa_filtro == "CIEL / AUTOCIEL":
+                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('CIEL', case=False, na=False)]
+            
+            # Tarjetas de resumen
+            en_proceso = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("PROCESO", na=False)])
+            detenidos = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("DETENIDO", na=False)])
+            terminados = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("TERM", na=False)])
+            
+            ce1, ce2, ce3 = st.columns(3)
+            ce1.markdown(f'<div class="metric-card"><div class="metric-title">En Proceso</div><div class="metric-value-number">{en_proceso}</div><div class="metric-subtitle-blue">Vehículos en Taller</div></div>', unsafe_allow_html=True)
+            ce2.markdown(f'<div class="metric-card"><div class="metric-title">Detenidos (Con Novedad)</div><div class="metric-value-number" style="color:#dc3545;">{detenidos}</div><div class="metric-subtitle-red">Revisar Observaciones</div></div>', unsafe_allow_html=True)
+            ce3.markdown(f'<div class="metric-card"><div class="metric-title">Terminados (Pte. Entregar)</div><div class="metric-value-number" style="color:#28a745;">{terminados}</div><div class="metric-subtitle-green">Listos / Facturando</div></div>', unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # Formateamos Fechas
+            df_vista_emp['Fecha Ingreso'] = df_vista_emp['Fecha_Ingreso'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+            df_vista_emp['Fecha Ticket'] = df_vista_emp['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+            df_vista_emp['Fecha Entrega'] = df_vista_emp['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+            
+            # Agregamos las columnas vacías para que editen
+            df_vista_emp['Fecha Ingreso Concesionario'] = None
+            df_vista_emp['Asesor Concesionario'] = ""
+
+            vista_columnas = [
+                'Cliente', 'Vehiculo', 'Patente', 'Fecha Ingreso', 'Fecha Ticket', 'Estado_Taller', 
+                'Fecha Entrega', 'Asesor', 'Fecha Ingreso Concesionario', 'Asesor Concesionario', 'Observaciones'
+            ]
+            
+            mask_entregados = df_vista_emp['Estado_Taller'].str.contains('ENTREGADO', na=False)
+            
+            df_pendientes = df_vista_emp[~mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
+            df_entregados = df_vista_emp[mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
+            
+            st.write("#### ⏳ Vehículos en Taller (Pendientes de Entrega)")
+            st.caption("💡 *Puedes editar las observaciones, fechas y nombres haciendo doble clic en la celda (los cambios se mantienen en la pantalla mientras navegas).*")
+            
+            # Tabla Editables (Pendientes)
+            edited_pendientes = st.data_editor(
+                df_pendientes,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
+                    "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
+                    "Patente": st.column_config.TextColumn("Patente", disabled=True),
+                    "Fecha Ingreso": st.column_config.TextColumn("Ingreso Taller", disabled=True),
+                    "Fecha Ticket": st.column_config.TextColumn("1ra Fecha Prom.", disabled=True),
+                    "Estado Actual": st.column_config.TextColumn("Estado Actual", disabled=True),
+                    "Fecha Entrega": st.column_config.TextColumn("Fecha Entrega", disabled=True),
+                    "Asesor": st.column_config.TextColumn("Asesor Taller", disabled=True),
+                    "Fecha Ingreso Concesionario": st.column_config.DateColumn("🗓️ Ingreso Conces.", format="DD/MM/YYYY"),
+                    "Asesor Concesionario": st.column_config.TextColumn("👤 Asesor Conces."),
+                    "Observaciones": st.column_config.TextColumn("📝 Observaciones (Doble Clic)", width="large", max_chars=1000)
+                },
+                key="editor_observaciones_pendientes"
+            )
+
+            st.write("#### 🚚 Vehículos Entregados (Historial Reciente)")
+            st.dataframe(
+                df_entregados,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Observaciones": st.column_config.TextColumn("Observaciones", width="large")
+                }
+            )
+            
+        else:
+            st.info("No hay vehículos registrados para las empresas del grupo en este momento.")
+
+# ==========================================
+# PESTAÑA 4: FACTURACIÓN
 # ==========================================
 with tab_fac:
     if not df.empty:
@@ -451,7 +552,7 @@ with tab_fac:
                     st.plotly_chart(fig_empresa, use_container_width=True)
 
 # ==========================================
-# PESTAÑA 4: KPIs
+# PESTAÑA 5: KPIs
 # ==========================================
 with tab_kpi:
     if not df.empty:
@@ -473,7 +574,7 @@ with tab_kpi:
         st.plotly_chart(fig_asesor_kpi, use_container_width=True)
 
 # ==========================================
-# PESTAÑA 5: HISTÓRICOS
+# PESTAÑA 6: HISTÓRICOS
 # ==========================================
 with tab_hist:
     if not df.empty:
@@ -497,100 +598,3 @@ with tab_hist:
             fig_hist = px.bar(df_hist, x="Mes_Hist", y="Paños", color="Cliente", barmode="group", title="Paños Facturados/Proyectados por Mes")
             st.plotly_chart(fig_hist, use_container_width=True)
         else: st.info("No hay datos con fechas válidas para mostrar el historial.")
-
-# ==========================================
-# PESTAÑA 6: PORTAL EMPRESAS
-# ==========================================
-with tab_portal:
-    if not df.empty:
-        st.subheader("🏢 Seguimiento de Unidades: Empresas del Grupo")
-        st.write("Vista exclusiva para que los responsables de AUTOSOL, AUTOLUX y CIEL puedan ver el estado de sus vehículos, fechas de entrega y observaciones.")
-        
-        df_grupo = df[df['Cliente'].str.contains('SOL|LUX|CIEL', case=False, na=False)].copy()
-        
-        if not df_grupo.empty:
-            c_filtro, _ = st.columns([1, 2])
-            with c_filtro:
-                empresa_filtro = st.selectbox("Seleccionar Empresa", ["TODAS", "AUTOSOL", "AUTOLUX", "CIEL / AUTOCIEL"])
-            
-            df_vista_emp = df_grupo.copy()
-            if empresa_filtro == "AUTOSOL":
-                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('SOL', case=False, na=False)]
-            elif empresa_filtro == "AUTOLUX":
-                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('LUX', case=False, na=False)]
-            elif empresa_filtro == "CIEL / AUTOCIEL":
-                df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('CIEL', case=False, na=False)]
-            
-            # Tarjetas de resumen
-            en_proceso = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("PROCESO", na=False)])
-            detenidos = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("DETENIDO", na=False)])
-            terminados = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("TERM", na=False)])
-            
-            ce1, ce2, ce3 = st.columns(3)
-            ce1.markdown(f'<div class="metric-card"><div class="metric-title">En Proceso</div><div class="metric-value-number">{en_proceso}</div><div class="metric-subtitle-blue">Vehículos en Taller</div></div>', unsafe_allow_html=True)
-            ce2.markdown(f'<div class="metric-card"><div class="metric-title">Detenidos (Con Novedad)</div><div class="metric-value-number" style="color:#dc3545;">{detenidos}</div><div class="metric-subtitle-red">Revisar Observaciones</div></div>', unsafe_allow_html=True)
-            ce3.markdown(f'<div class="metric-card"><div class="metric-title">Terminados (Pte. Entregar)</div><div class="metric-value-number" style="color:#28a745;">{terminados}</div><div class="metric-subtitle-green">Listos / Facturando</div></div>', unsafe_allow_html=True)
-            
-            st.divider()
-            
-            # Formateamos Fechas
-            df_vista_emp['Fecha Ingreso'] = df_vista_emp['Fecha_Ingreso'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-            df_vista_emp['Fecha Ticket'] = df_vista_emp['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-            df_vista_emp['Fecha Entrega'] = df_vista_emp['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-            
-            # Agregamos las columnas vacías para que editen
-            df_vista_emp['Fecha Ingreso Concesionario'] = None
-            df_vista_emp['Asesor Concesionario'] = ""
-
-            vista_columnas = [
-                'Cliente', 'Vehiculo', 'Patente', 'Fecha Ingreso', 'Fecha Ticket', 'Estado_Taller', 
-                'Fecha Entrega', 'Asesor', 'Fecha Ingreso Concesionario', 'Asesor Concesionario', 'Observaciones'
-            ]
-            
-            mask_entregados = df_vista_emp['Estado_Taller'].str.contains('ENTREGADO', na=False)
-            
-            df_pendientes = df_vista_emp[~mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
-            df_entregados = df_vista_emp[mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
-            
-            st.write("#### ⏳ Vehículos en Taller (Pendientes de Entrega)")
-            st.caption("💡 *Puedes editar las observaciones, fechas y nombres haciendo doble clic en la celda (los cambios se mantienen en la pantalla mientras navegas).*")
-            
-            # Tabla Editables (Pendientes)
-            edited_pendientes = st.data_editor(
-                df_pendientes,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
-                    "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
-                    "Patente": st.column_config.TextColumn("Patente", disabled=True),
-                    "Fecha Ingreso": st.column_config.TextColumn("Ingreso Taller", disabled=True),
-                    "Fecha Ticket": st.column_config.TextColumn("1ra Fecha Prom.", disabled=True),
-                    "Estado Actual": st.column_config.TextColumn("Estado Actual", disabled=True),
-                    "Fecha Entrega": st.column_config.TextColumn("Fecha Entrega", disabled=True),
-                    "Asesor": st.column_config.TextColumn("Asesor Taller", disabled=True),
-                    "Fecha Ingreso Concesionario": st.column_config.DateColumn("🗓️ Ingreso Conces.", format="DD/MM/YYYY"),
-                    "Asesor Concesionario": st.column_config.TextColumn("👤 Asesor Conces."),
-                    "Observaciones": st.column_config.TextColumn("📝 Observaciones (Doble Clic)", width="large", max_chars=1000)
-                },
-                key="editor_observaciones_pendientes"
-            )
-
-            st.write("#### 🚚 Vehículos Entregados (Historial Reciente)")
-            st.dataframe(
-                df_entregados,
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "Observaciones": st.column_config.TextColumn("Observaciones", width="large")
-                }
-            )
-            
-        else:
-            st.info("No hay vehículos registrados para las empresas del grupo en este momento.")
-
-with st.sidebar:
-    if st.button("🔄 Refrescar Datos desde Sheet"):
-        st.cache_data.clear()
-        if 'memoria_turnos_v11' in st.session_state: del st.session_state['memoria_turnos_v11']
-        st.rerun()
