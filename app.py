@@ -150,7 +150,6 @@ def obtener_datos_maestros():
         f_ticket = parsear_fecha_español(row.get('FECHA_TICKET', ''))
         fecha_ticket_disp = f_ticket.date() if f_ticket is not None else None
         
-        # LÓGICA CORREGIDA PARA PAÑOS: Si está vacío, es 0.0
         try:
             texto_panos = str(row.get('PAÑOS', '0')).replace(',', '.')
             if texto_panos.lower() == 'nan' or texto_panos.strip() == '':
@@ -160,7 +159,6 @@ def obtener_datos_maestros():
         except: 
             panos = 0.0
         
-        # Para que el gráfico de Gantt no se rompa si los paños son 0, forzamos un mínimo de 1 día de diferencia
         f_inicio = f_fin - timedelta(days=max(1, int(panos)))
         
         precio_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
@@ -277,7 +275,7 @@ with tab_turnos:
                 if not edited_prog.empty:
                     for idx, row in edited_prog.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
                 if not edited_sin.empty:
-                    for idx, row in edited_iterrows():
+                    for idx, row in edited_sin.iterrows():
                         if row.get('Eliminar', False): indices_a_borrar.append(idx)
                         else: st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
                 if indices_a_borrar: st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
@@ -505,47 +503,59 @@ with tab_fac:
             
             return df_res.sort_values(by='📦 EST. CIERRE (FAC+SI)', ascending=False)
 
-        colores_grafico = {'Facturado (FAC)': '#28a745', 'Aprobado (SI)': '#00A8E8', 'En Taller (Otros)': '#adb5bd'}
+        colores_grafico = {'Facturado': '#28a745', 'Proyección al Cierre': '#00A8E8'}
 
         tab_grupos, tab_asesores, tab_empresas = st.tabs(["👥 Producción por Grupo", "👔 Producción por Asesor", "🏢 Estimado Cierre por Empresa"])
 
         with tab_grupos:
-            st.markdown("Comparativa visual del trabajo facturado vs. lo que está en proceso, separado por equipo.")
-            grupo_stats = df_analisis.groupby(['Grupo', 'Estado_Resumen'])[['Paños', 'Precio']].sum().reset_index()
+            st.markdown("Comparativa de lo facturado actualmente contra la estimación total al cierre del mes.")
+            tabla_grupo = crear_tabla_resumen(df_analisis, 'Grupo')
             
+            # Preparamos datos EXCLUSIVOS para el gráfico: Solo FAC vs Cierre Total
+            df_g_panos_chart = tabla_grupo.reset_index()[['Grupo', '📦 FAC', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Grupo', var_name='Métrica', value_name='Paños')
+            df_g_panos_chart['Métrica'] = df_g_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+            
+            df_g_pesos_chart = tabla_grupo.reset_index()[['Grupo', '💰 FAC', '💰 EST. CIERRE (FAC+SI)']].melt(id_vars='Grupo', var_name='Métrica', value_name='Precio')
+            df_g_pesos_chart['Métrica'] = df_g_pesos_chart['Métrica'].replace({'💰 FAC': 'Facturado', '💰 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+
             col_g_g1, col_g_g2 = st.columns(2)
             with col_g_g1:
-                fig_g_panos = px.bar(grupo_stats, x='Grupo', y='Paños', color='Estado_Resumen', barmode='group', text_auto='.1f', title='📦 Paños Totales', color_discrete_map=colores_grafico)
-                fig_g_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_g_panos = px.bar(df_g_panos_chart, x='Grupo', y='Paños', color='Métrica', barmode='group', text_auto='.1f', title='📦 Paños Totales (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_g_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_g_panos, use_container_width=True)
             with col_g_g2:
-                fig_g_pesos = px.bar(grupo_stats, x='Grupo', y='Precio', color='Estado_Resumen', barmode='group', text_auto='$.2s', title='💰 Montos en Pesos', color_discrete_map=colores_grafico)
-                fig_g_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_g_pesos = px.bar(df_g_pesos_chart, x='Grupo', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos en Pesos (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_g_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_g_pesos, use_container_width=True)
 
             st.write("#### 📋 Resumen Financiero por Grupo")
-            tabla_grupo = crear_tabla_resumen(df_analisis, 'Grupo')
             st.dataframe(tabla_grupo.style.format({
                 '📦 FAC': '{:.1f}', '📦 SI': '{:.1f}', '📦 EST. CIERRE (FAC+SI)': '{:.1f}', '📦 OTROS (En Taller)': '{:.1f}',
                 '💰 FAC': '${:,.0f}', '💰 SI': '${:,.0f}', '💰 EST. CIERRE (FAC+SI)': '${:,.0f}', '💰 OTROS (En Taller)': '${:,.0f}'
             }), use_container_width=True)
 
         with tab_asesores:
-            st.markdown("Rendimiento individual y cartera de vehículos asignada por asesor.")
-            asesor_stats = df_analisis.groupby(['Asesor', 'Estado_Resumen'])[['Paños', 'Precio']].sum().reset_index()
+            st.markdown("Rendimiento individual: Lo facturado actualmente contra la estimación total al cierre.")
+            tabla_asesor = crear_tabla_resumen(df_analisis, 'Asesor')
             
+            # Preparamos datos EXCLUSIVOS para el gráfico: Solo FAC vs Cierre Total
+            df_a_panos_chart = tabla_asesor.reset_index()[['Asesor', '📦 FAC', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Paños')
+            df_a_panos_chart['Métrica'] = df_a_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+            
+            df_a_pesos_chart = tabla_asesor.reset_index()[['Asesor', '💰 FAC', '💰 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Precio')
+            df_a_pesos_chart['Métrica'] = df_a_pesos_chart['Métrica'].replace({'💰 FAC': 'Facturado', '💰 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+
             col_a_g1, col_a_g2 = st.columns(2)
             with col_a_g1:
-                fig_a_panos = px.bar(asesor_stats, x='Asesor', y='Paños', color='Estado_Resumen', barmode='group', text_auto='.1f', title='📦 Paños por Asesor', color_discrete_map=colores_grafico)
-                fig_a_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_a_panos = px.bar(df_a_panos_chart, x='Asesor', y='Paños', color='Métrica', barmode='group', text_auto='.1f', title='📦 Paños por Asesor (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_a_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_a_panos, use_container_width=True)
             with col_a_g2:
-                fig_a_pesos = px.bar(asesor_stats, x='Asesor', y='Precio', color='Estado_Resumen', barmode='group', text_auto='$.2s', title='💰 Montos por Asesor', color_discrete_map=colores_grafico)
-                fig_a_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_a_pesos = px.bar(df_a_pesos_chart, x='Asesor', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos por Asesor (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_a_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_a_pesos, use_container_width=True)
 
             st.write("#### 📋 Resumen Financiero por Asesor")
-            tabla_asesor = crear_tabla_resumen(df_analisis, 'Asesor')
             st.dataframe(tabla_asesor.style.format({
                 '📦 FAC': '{:.1f}', '📦 SI': '{:.1f}', '📦 EST. CIERRE (FAC+SI)': '{:.1f}', '📦 OTROS (En Taller)': '{:.1f}',
                 '💰 FAC': '${:,.0f}', '💰 SI': '${:,.0f}', '💰 EST. CIERRE (FAC+SI)': '${:,.0f}', '💰 OTROS (En Taller)': '${:,.0f}'
