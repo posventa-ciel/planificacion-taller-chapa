@@ -173,8 +173,13 @@ def obtener_datos_maestros():
         
         obs_val = str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
 
+        # CORRECCIÓN DE ASESORES VACÍOS
+        asesor_val = str(row.get('ASESOR', '')).strip().upper()
+        if asesor_val == 'NAN' or asesor_val == '':
+            asesor_val = "SIN ASIGNAR"
+
         filas.append({
-            'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': str(row.get('ASESOR', 'SIN ASESOR')).strip().upper(),
+            'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': asesor_val,
             'Cliente': cliente_val, 'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')),
             'Inicio': f_inicio, 'Fin': f_fin, 'Fecha_Promesa_Disp': fecha_promesa_display, 
             'Fecha_Ingreso': fecha_ingreso_disp, 'Fecha_Ticket': fecha_ticket_disp,
@@ -503,7 +508,6 @@ with tab_fac:
             
             return df_res.sort_values(by='📦 EST. CIERRE (FAC+SI)', ascending=False)
 
-        # Usamos verde para Facturado, un gris neutro para lo Aprobado y Azul para el Total Proyectado
         colores_grafico = {'Facturado': '#28a745', 'Aprobado (SI)': '#adb5bd', 'Proyección al Cierre': '#00A8E8'}
 
         tab_grupos, tab_asesores, tab_empresas = st.tabs(["👥 Producción por Grupo", "👔 Producción por Asesor", "🏢 Estimado Cierre por Empresa"])
@@ -512,7 +516,6 @@ with tab_fac:
             st.markdown("Comparativa de lo facturado actualmente contra la estimación total al cierre del mes.")
             tabla_grupo = crear_tabla_resumen(df_analisis, 'Grupo')
             
-            # Preparamos las TRES barras
             df_g_panos_chart = tabla_grupo.reset_index()[['Grupo', '📦 FAC', '📦 SI', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Grupo', var_name='Métrica', value_name='Paños')
             df_g_panos_chart['Métrica'] = df_g_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 SI': 'Aprobado (SI)', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
             
@@ -539,7 +542,6 @@ with tab_fac:
             st.markdown("Rendimiento individual: Escalera desde lo facturado hasta el estimado total.")
             tabla_asesor = crear_tabla_resumen(df_analisis, 'Asesor')
             
-            # Preparamos las TRES barras
             df_a_panos_chart = tabla_asesor.reset_index()[['Asesor', '📦 FAC', '📦 SI', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Paños')
             df_a_panos_chart['Métrica'] = df_a_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 SI': 'Aprobado (SI)', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
             
