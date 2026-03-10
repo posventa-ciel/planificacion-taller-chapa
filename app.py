@@ -503,7 +503,8 @@ with tab_fac:
             
             return df_res.sort_values(by='📦 EST. CIERRE (FAC+SI)', ascending=False)
 
-        colores_grafico = {'Facturado': '#28a745', 'Proyección al Cierre': '#00A8E8'}
+        # Usamos verde para Facturado, un gris neutro para lo Aprobado y Azul para el Total Proyectado
+        colores_grafico = {'Facturado': '#28a745', 'Aprobado (SI)': '#adb5bd', 'Proyección al Cierre': '#00A8E8'}
 
         tab_grupos, tab_asesores, tab_empresas = st.tabs(["👥 Producción por Grupo", "👔 Producción por Asesor", "🏢 Estimado Cierre por Empresa"])
 
@@ -511,20 +512,20 @@ with tab_fac:
             st.markdown("Comparativa de lo facturado actualmente contra la estimación total al cierre del mes.")
             tabla_grupo = crear_tabla_resumen(df_analisis, 'Grupo')
             
-            # Preparamos datos EXCLUSIVOS para el gráfico: Solo FAC vs Cierre Total
-            df_g_panos_chart = tabla_grupo.reset_index()[['Grupo', '📦 FAC', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Grupo', var_name='Métrica', value_name='Paños')
-            df_g_panos_chart['Métrica'] = df_g_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+            # Preparamos las TRES barras
+            df_g_panos_chart = tabla_grupo.reset_index()[['Grupo', '📦 FAC', '📦 SI', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Grupo', var_name='Métrica', value_name='Paños')
+            df_g_panos_chart['Métrica'] = df_g_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 SI': 'Aprobado (SI)', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
             
-            df_g_pesos_chart = tabla_grupo.reset_index()[['Grupo', '💰 FAC', '💰 EST. CIERRE (FAC+SI)']].melt(id_vars='Grupo', var_name='Métrica', value_name='Precio')
-            df_g_pesos_chart['Métrica'] = df_g_pesos_chart['Métrica'].replace({'💰 FAC': 'Facturado', '💰 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+            df_g_pesos_chart = tabla_grupo.reset_index()[['Grupo', '💰 FAC', '💰 SI', '💰 EST. CIERRE (FAC+SI)']].melt(id_vars='Grupo', var_name='Métrica', value_name='Precio')
+            df_g_pesos_chart['Métrica'] = df_g_pesos_chart['Métrica'].replace({'💰 FAC': 'Facturado', '💰 SI': 'Aprobado (SI)', '💰 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
 
             col_g_g1, col_g_g2 = st.columns(2)
             with col_g_g1:
-                fig_g_panos = px.bar(df_g_panos_chart, x='Grupo', y='Paños', color='Métrica', barmode='group', text_auto='.1f', title='📦 Paños Totales (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_g_panos = px.bar(df_g_panos_chart, x='Grupo', y='Paños', color='Métrica', barmode='group', text_auto='.1f', title='📦 Paños Totales (Escalera al Cierre)', color_discrete_map=colores_grafico)
                 fig_g_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_g_panos, use_container_width=True)
             with col_g_g2:
-                fig_g_pesos = px.bar(df_g_pesos_chart, x='Grupo', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos en Pesos (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_g_pesos = px.bar(df_g_pesos_chart, x='Grupo', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos en Pesos (Escalera al Cierre)', color_discrete_map=colores_grafico)
                 fig_g_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_g_pesos, use_container_width=True)
 
@@ -535,23 +536,23 @@ with tab_fac:
             }), use_container_width=True)
 
         with tab_asesores:
-            st.markdown("Rendimiento individual: Lo facturado actualmente contra la estimación total al cierre.")
+            st.markdown("Rendimiento individual: Escalera desde lo facturado hasta el estimado total.")
             tabla_asesor = crear_tabla_resumen(df_analisis, 'Asesor')
             
-            # Preparamos datos EXCLUSIVOS para el gráfico: Solo FAC vs Cierre Total
-            df_a_panos_chart = tabla_asesor.reset_index()[['Asesor', '📦 FAC', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Paños')
-            df_a_panos_chart['Métrica'] = df_a_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+            # Preparamos las TRES barras
+            df_a_panos_chart = tabla_asesor.reset_index()[['Asesor', '📦 FAC', '📦 SI', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Paños')
+            df_a_panos_chart['Métrica'] = df_a_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 SI': 'Aprobado (SI)', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
             
-            df_a_pesos_chart = tabla_asesor.reset_index()[['Asesor', '💰 FAC', '💰 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Precio')
-            df_a_pesos_chart['Métrica'] = df_a_pesos_chart['Métrica'].replace({'💰 FAC': 'Facturado', '💰 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
+            df_a_pesos_chart = tabla_asesor.reset_index()[['Asesor', '💰 FAC', '💰 SI', '💰 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Precio')
+            df_a_pesos_chart['Métrica'] = df_a_pesos_chart['Métrica'].replace({'💰 FAC': 'Facturado', '💰 SI': 'Aprobado (SI)', '💰 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
 
             col_a_g1, col_a_g2 = st.columns(2)
             with col_a_g1:
-                fig_a_panos = px.bar(df_a_panos_chart, x='Asesor', y='Paños', color='Métrica', barmode='group', text_auto='.1f', title='📦 Paños por Asesor (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_a_panos = px.bar(df_a_panos_chart, x='Asesor', y='Paños', color='Métrica', barmode='group', text_auto='.1f', title='📦 Paños por Asesor (Escalera al Cierre)', color_discrete_map=colores_grafico)
                 fig_a_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_a_panos, use_container_width=True)
             with col_a_g2:
-                fig_a_pesos = px.bar(df_a_pesos_chart, x='Asesor', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos por Asesor (Facturado vs Cierre)', color_discrete_map=colores_grafico)
+                fig_a_pesos = px.bar(df_a_pesos_chart, x='Asesor', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos por Asesor (Escalera al Cierre)', color_discrete_map=colores_grafico)
                 fig_a_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_a_pesos, use_container_width=True)
 
