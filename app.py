@@ -540,7 +540,11 @@ with tab_fac:
 
         with tab_asesores:
             st.markdown("Rendimiento individual: Escalera desde lo facturado hasta el estimado total.")
-            tabla_asesor = crear_tabla_resumen(df_analisis, 'Asesor')
+            
+            # FILTRO ESTRICTO: Dejamos afuera cualquier fila "SIN ASIGNAR" para limpiar el gráfico de asesores
+            df_asesores_limpio = df_analisis[df_analisis['Asesor'] != 'SIN ASIGNAR'].copy()
+            
+            tabla_asesor = crear_tabla_resumen(df_asesores_limpio, 'Asesor')
             
             df_a_panos_chart = tabla_asesor.reset_index()[['Asesor', '📦 FAC', '📦 SI', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Paños')
             df_a_panos_chart['Métrica'] = df_a_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 SI': 'Aprobado (SI)', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
@@ -600,7 +604,10 @@ with tab_kpi:
 
         st.divider()
         st.write("### Cantidad de Vehículos por Asesor")
-        fig_asesor_kpi = px.bar(df, x="Asesor", color="Estado_Fac", barmode="group")
+        
+        # Filtramos acá también para que el gráfico de KPI no muestre "SIN ASIGNAR"
+        df_kpi_asesores = df[df['Asesor'] != 'SIN ASIGNAR']
+        fig_asesor_kpi = px.bar(df_kpi_asesores, x="Asesor", color="Estado_Fac", barmode="group")
         st.plotly_chart(fig_asesor_kpi, use_container_width=True)
 
 # ==========================================
