@@ -314,7 +314,7 @@ with tab_prog:
             else: st.info("No hay vehículos para mostrar en el gráfico.")
 
 # ==========================================
-# PESTAÑA 3: FACTURACIÓN (CON NUEVAS TARJETAS)
+# PESTAÑA 3: FACTURACIÓN
 # ==========================================
 with tab_fac:
     if not df.empty:
@@ -351,26 +351,82 @@ with tab_fac:
         c_e3.markdown(f'<div class="metric-card"><div class="metric-title">Entregado Pend. Facturar</div><div class="metric-value-money">${df_epf["Precio"].sum():,.0f}</div><div class="metric-subtitle-green">🚚 {df_epf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
         
         st.divider()
+
+        # ==========================================
+        # NUEVA SECCIÓN: ANÁLISIS DE PRODUCCIÓN
+        # ==========================================
+        st.write("### 📊 Análisis de Producción: Grupos y Asesores")
         
-        # Tablas Inferiores
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.write("### 👥 Pesos por Grupo y Estado")
-            res_grupo = df.groupby(['Grupo', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
-            st.table(res_grupo.style.format("$ {:,.0f}"))
+        # Preparamos los datos: Clasificamos en "Facturado" y "Proyectado/Por Facturar"
+        df_analisis = df.copy()
+        # Todo lo que no es FAC lo consideramos en el pipeline ("Por Facturar") para mostrar la oportunidad
+        df_analisis['Estado_Resumen'] = df_analisis['Estado_Fac'].apply(lambda x: 'Facturado' if x == 'FAC' else 'Proyectado (Por Facturar)')
+
+        tab_grupos, tab_asesores, tab_empresas = st.tabs(["👥 Comparativa por Grupos", "👔 Comparativa por Asesores", "🏢 Desglose por Empresa"])
+
+        with tab_grupos:
+            st.markdown("Comparativa de producción real y proyección a futuro por equipo de trabajo.")
+            grupo_stats = df_analisis.groupby(['Grupo', 'Estado_Resumen'])[['Paños', 'Precio']].sum().reset_index()
             
-            st.write("### 🏢 Desglose General por Empresa (Cliente)")
-            res_empresa = df.groupby('Cliente')[['Paños', 'Precio']].sum().reset_index().sort_values(by='Paños', ascending=False)
-            st.dataframe(res_empresa.style.format({'Precio': "$ {:,.0f}", 'Paños': "{:.1f}"}), hide_index=True, use_container_width=True)
+            col_g_tab, col_g_g1, col_g_g2 = st.columns([1, 1.5, 1.5])
+            with col_g_tab:
+                # Tabla resumen
+                res_grupo_tabla = df_analisis.groupby(['Grupo', 'Estado_Resumen'])[['Paños', 'Precio']].sum().unstack(fill_value=0)
+                # Formateo amigable
+                res_grupo_tabla.columns = [f"{col[1]} ({col[0]})" for col in res_grupo_tabla.columns]
+                st.dataframe(res_grupo_tabla.style.format("{:,.0f}"), use_container_width=True)
+
+            with col_g_g1:
+                # Gráfico Paños
+                fig_g_panos = px.bar(grupo_stats, x='Grupo', y='Paños', color='Estado_Resumen', barmode='group', 
+                                     text_auto='.1f', title='📦 Paños Totales', 
+                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#00A8E8'})
+                fig_g_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(fig_g_panos, use_container_width=True)
+
+            with col_g_g2:
+                # Gráfico Pesos
+                fig_g_pesos = px.bar(grupo_stats, x='Grupo', y='Precio', color='Estado_Resumen', barmode='group', 
+                                     text_auto='$.2s', title='💰 Montos en Pesos',
+                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#00A8E8'})
+                fig_g_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(fig_g_pesos, use_container_width=True)
+
+        with tab_asesores:
+            st.markdown("Rendimiento individual y cartera de vehículos asignada por asesor.")
+            asesor_stats = df_analisis.groupby(['Asesor', 'Estado_Resumen'])[['Paños', 'Precio']].sum().reset_index()
             
-        with col_b:
-            st.write("### 👔 Pesos por Asesor")
-            res_asesor = df.groupby(['Asesor', 'Estado_Fac'])['Precio'].sum().unstack(fill_value=0)
-            st.table(res_asesor.style.format("$ {:,.0f}"))
-            
-            st.write("### 🧑‍🔧 Paños por Grupo y Estado Taller")
-            res_grupo_panos = df.groupby(['Grupo', 'Estado_Taller'])['Paños'].sum().unstack(fill_value=0)
-            st.dataframe(res_grupo_panos.style.format("{:.1f}"), use_container_width=True)
+            col_a_tab, col_a_g1, col_a_g2 = st.columns([1, 1.5, 1.5])
+            with col_a_tab:
+                res_asesor_tabla = df_analisis.groupby(['Asesor', 'Estado_Resumen'])[['Paños', 'Precio']].sum().unstack(fill_value=0)
+                res_asesor_tabla.columns = [f"{col[1]} ({col[0]})" for col in res_asesor_tabla.columns]
+                st.dataframe(res_asesor_tabla.style.format("{:,.0f}"), use_container_width=True)
+
+            with col_a_g1:
+                fig_a_panos = px.bar(asesor_stats, x='Asesor', y='Paños', color='Estado_Resumen', barmode='group', 
+                                     text_auto='.1f', title='📦 Paños por Asesor',
+                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#ffc107'})
+                fig_a_panos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(fig_a_panos, use_container_width=True)
+
+            with col_a_g2:
+                fig_a_pesos = px.bar(asesor_stats, x='Asesor', y='Precio', color='Estado_Resumen', barmode='group', 
+                                     text_auto='$.2s', title='💰 Montos por Asesor',
+                                     color_discrete_map={'Facturado': '#28a745', 'Proyectado (Por Facturar)': '#ffc107'})
+                fig_a_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(fig_a_pesos, use_container_width=True)
+
+        with tab_empresas:
+            col_e1, col_e2 = st.columns([1, 2])
+            with col_e1:
+                st.write("#### 🏢 Desglose General (Cliente)")
+                res_empresa = df.groupby('Cliente')[['Paños', 'Precio']].sum().reset_index().sort_values(by='Paños', ascending=False)
+                st.dataframe(res_empresa.style.format({'Precio': "$ {:,.0f}", 'Paños': "{:.1f}"}), hide_index=True, use_container_width=True)
+            with col_e2:
+                # Un gráfico de torta acá si queda bien para ver cómo se reparte la cuota de clientes
+                if not res_empresa.empty:
+                    fig_empresa = px.pie(res_empresa, values='Precio', names='Cliente', hole=0.4, title="Participación de Clientes (Volumen en $)")
+                    st.plotly_chart(fig_empresa, use_container_width=True)
 
 # ==========================================
 # PESTAÑA 4: KPIs
@@ -391,8 +447,8 @@ with tab_kpi:
 
         st.divider()
         st.write("### Cantidad de Vehículos por Asesor")
-        fig_asesor = px.bar(df, x="Asesor", color="Estado_Fac", barmode="group")
-        st.plotly_chart(fig_asesor, use_container_width=True)
+        fig_asesor_kpi = px.bar(df, x="Asesor", color="Estado_Fac", barmode="group")
+        st.plotly_chart(fig_asesor_kpi, use_container_width=True)
 
 # ==========================================
 # PESTAÑA 5: HISTÓRICOS
