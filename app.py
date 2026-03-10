@@ -150,12 +150,17 @@ def obtener_datos_maestros():
         f_ticket = parsear_fecha_español(row.get('FECHA_TICKET', ''))
         fecha_ticket_disp = f_ticket.date() if f_ticket is not None else None
         
+        # LÓGICA CORREGIDA PARA PAÑOS: Si está vacío, es 0.0
         try:
-            texto_panos = str(row.get('PAÑOS', '1')).replace(',', '.')
+            texto_panos = str(row.get('PAÑOS', '0')).replace(',', '.')
+            if texto_panos.lower() == 'nan' or texto_panos.strip() == '':
+                texto_panos = '0'
             numeros = re.findall(r"[-+]?\d*\.\d+|\d+", texto_panos)
-            panos = float(numeros[0]) if numeros else 1.0
-        except: panos = 1.0
+            panos = float(numeros[0]) if numeros else 0.0
+        except: 
+            panos = 0.0
         
+        # Para que el gráfico de Gantt no se rompa si los paños son 0, forzamos un mínimo de 1 día de diferencia
         f_inicio = f_fin - timedelta(days=max(1, int(panos)))
         
         precio_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
@@ -272,7 +277,7 @@ with tab_turnos:
                 if not edited_prog.empty:
                     for idx, row in edited_prog.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
                 if not edited_sin.empty:
-                    for idx, row in edited_sin.iterrows():
+                    for idx, row in edited_iterrows():
                         if row.get('Eliminar', False): indices_a_borrar.append(idx)
                         else: st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
                 if indices_a_borrar: st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
@@ -441,8 +446,6 @@ with tab_fac:
         # --- PREPARACIÓN DE DATOS ---
         df_analisis = df.copy()
         
-        # Eliminamos la función de agrupar. Ahora usamos el Cliente tal cual viene del Excel.
-        
         def clasificar_estado(x):
             if x == 'FAC': return 'Facturado (FAC)'
             elif x == 'SI': return 'Aprobado (SI)'
@@ -553,7 +556,6 @@ with tab_fac:
             col_e1, col_e2 = st.columns([1.5, 1])
             with col_e1:
                 st.write("#### 🏢 Desglose General (Cliente)")
-                # Ahora usamos Cliente directo en lugar de Empresa_Agrupada
                 tabla_empresa = crear_tabla_resumen(df_analisis, 'Cliente')
                 st.dataframe(tabla_empresa.style.format({
                     '📦 FAC': '{:.1f}', '📦 SI': '{:.1f}', '📦 EST. CIERRE (FAC+SI)': '{:.1f}', '📦 OTROS (En Taller)': '{:.1f}',
