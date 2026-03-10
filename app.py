@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, date
 import re
 import time
 
-st.set_page_config(page_title="Gestión Taller CENOA", layout="wide")
+st.set_page_config(page_title="Gestión Taller CENOA - Jujuy", layout="wide")
 
 # --- ESTILOS CSS INYECTADOS (FORMATO TARJETAS) ---
 st.markdown("""<style>
@@ -31,7 +31,7 @@ st.markdown("""<style>
     .metric-subtitle-gray { color: #888; font-size: 0.8rem; margin-top: 5px; }
 </style>""", unsafe_allow_html=True)
 
-st.title("🚀 Sistema de Gestión CENOA")
+st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
 
 # --- CONFIGURACIÓN ---
 ID_NUEVO_SHEET = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
@@ -387,12 +387,33 @@ with tab_portal:
             
             st.divider()
             
-            # Formateamos Fechas
+            # --- LÓGICA DE ALERTAS VISUALES (SEMAFOROS) ---
+            def calcular_fecha_entrega(row):
+                f_prom = row['Fecha_Promesa_Disp']
+                f_tick = row['Fecha_Ticket']
+                if pd.isna(f_prom): return "Sin Fecha"
+                
+                texto_fecha = f_prom.strftime('%d/%m/%Y')
+                # Si la fecha de entrega final es mayor a la del ticket original, marcar demorado
+                if pd.notna(f_tick) and f_prom > f_tick:
+                    return f"{texto_fecha} 🟡 (Demorado)"
+                return texto_fecha
+
+            df_vista_emp['Fecha Entrega'] = df_vista_emp.apply(calcular_fecha_entrega, axis=1)
+            
+            def calcular_estado(estado):
+                estado_str = str(estado).upper()
+                # Si está detenido, clavar el cartel rojo
+                if "DETENIDO" in estado_str:
+                    return f"🔴 {estado_str}"
+                return estado_str
+
+            df_vista_emp['Estado_Taller'] = df_vista_emp['Estado_Taller'].apply(calcular_estado)
+            
+            # Formateamos resto de fechas
             df_vista_emp['Fecha Ingreso'] = df_vista_emp['Fecha_Ingreso'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
             df_vista_emp['Fecha Ticket'] = df_vista_emp['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-            df_vista_emp['Fecha Entrega'] = df_vista_emp['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
             
-            # Agregamos las columnas vacías para que editen
             df_vista_emp['Fecha Ingreso Concesionario'] = None
             df_vista_emp['Asesor Concesionario'] = ""
 
@@ -532,6 +553,21 @@ with tab_fac:
                 fig_g_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_g_pesos, use_container_width=True)
 
+            # GRÁFICOS DE TORTA (NUEVOS)
+            st.write("#### 🥧 Porcentaje de Participación (Cierre Estimado)")
+            col_g_p1, col_g_p2 = st.columns(2)
+            df_pie_g = tabla_grupo.reset_index()
+            with col_g_p1:
+                df_panos_pie = df_pie_g[df_pie_g['📦 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_panos_pie.empty:
+                    fig_pie_g_panos = px.pie(df_panos_pie, values='📦 EST. CIERRE (FAC+SI)', names='Grupo', hole=0.4, title='Distribución de Paños Totales')
+                    st.plotly_chart(fig_pie_g_panos, use_container_width=True)
+            with col_g_p2:
+                df_pesos_pie = df_pie_g[df_pie_g['💰 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_pesos_pie.empty:
+                    fig_pie_g_pesos = px.pie(df_pesos_pie, values='💰 EST. CIERRE (FAC+SI)', names='Grupo', hole=0.4, title='Distribución de Ingresos Totales ($)')
+                    st.plotly_chart(fig_pie_g_pesos, use_container_width=True)
+
             st.write("#### 📋 Resumen Financiero por Grupo")
             st.dataframe(tabla_grupo.style.format({
                 '📦 FAC': '{:.1f}', '📦 SI': '{:.1f}', '📦 EST. CIERRE (FAC+SI)': '{:.1f}', '📦 OTROS (En Taller)': '{:.1f}',
@@ -541,9 +577,7 @@ with tab_fac:
         with tab_asesores:
             st.markdown("Rendimiento individual: Escalera desde lo facturado hasta el estimado total.")
             
-            # FILTRO ESTRICTO: Dejamos afuera cualquier fila "SIN ASIGNAR" para limpiar el gráfico de asesores
             df_asesores_limpio = df_analisis[df_analisis['Asesor'] != 'SIN ASIGNAR'].copy()
-            
             tabla_asesor = crear_tabla_resumen(df_asesores_limpio, 'Asesor')
             
             df_a_panos_chart = tabla_asesor.reset_index()[['Asesor', '📦 FAC', '📦 SI', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Paños')
@@ -561,6 +595,21 @@ with tab_fac:
                 fig_a_pesos = px.bar(df_a_pesos_chart, x='Asesor', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos por Asesor (Escalera al Cierre)', color_discrete_map=colores_grafico)
                 fig_a_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_a_pesos, use_container_width=True)
+
+            # GRÁFICOS DE TORTA (NUEVOS)
+            st.write("#### 🥧 Porcentaje de Participación (Cierre Estimado)")
+            col_a_p1, col_a_p2 = st.columns(2)
+            df_pie_a = tabla_asesor.reset_index()
+            with col_a_p1:
+                df_panos_pie_a = df_pie_a[df_pie_a['📦 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_panos_pie_a.empty:
+                    fig_pie_a_panos = px.pie(df_panos_pie_a, values='📦 EST. CIERRE (FAC+SI)', names='Asesor', hole=0.4, title='Distribución de Paños Totales')
+                    st.plotly_chart(fig_pie_a_panos, use_container_width=True)
+            with col_a_p2:
+                df_pesos_pie_a = df_pie_a[df_pie_a['💰 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_pesos_pie_a.empty:
+                    fig_pie_a_pesos = px.pie(df_pesos_pie_a, values='💰 EST. CIERRE (FAC+SI)', names='Asesor', hole=0.4, title='Distribución de Ingresos Totales ($)')
+                    st.plotly_chart(fig_pie_a_pesos, use_container_width=True)
 
             st.write("#### 📋 Resumen Financiero por Asesor")
             st.dataframe(tabla_asesor.style.format({
@@ -604,8 +653,6 @@ with tab_kpi:
 
         st.divider()
         st.write("### Cantidad de Vehículos por Asesor")
-        
-        # Filtramos acá también para que el gráfico de KPI no muestre "SIN ASIGNAR"
         df_kpi_asesores = df[df['Asesor'] != 'SIN ASIGNAR']
         fig_asesor_kpi = px.bar(df_kpi_asesores, x="Asesor", color="Estado_Fac", barmode="group")
         st.plotly_chart(fig_asesor_kpi, use_container_width=True)
