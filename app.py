@@ -337,24 +337,53 @@ with tab_fac:
     if not df.empty:
         st.subheader("Análisis de Facturación y Paños")
         
+        # --- NUEVA LÓGICA DE PROYECCIÓN AL CIERRE ---
         df_fac = df[df['Estado_Fac'] == 'FAC']
-        df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
-        df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
-        df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
+        df_si = df[df['Estado_Fac'] == 'SI']
         
         pesos_fac = df_fac['Precio'].sum()
         panos_fac = df_fac['Paños'].sum()
-        ratio_peso_pano = (pesos_fac / panos_fac) if panos_fac > 0 else 0
         
-        st.write("### 💰 Rendimiento Actual")
-        c_r1, c_r2, c_r3, c_r4 = st.columns(4)
-        c_r1.markdown(f'<div class="metric-card"><div class="metric-title">Facturado (Pesos)</div><div class="metric-value-money">${pesos_fac:,.0f}</div><div class="metric-subtitle-gray">Total Estado FAC</div></div>', unsafe_allow_html=True)
-        c_r2.markdown(f'<div class="metric-card"><div class="metric-title">Facturado (Paños)</div><div class="metric-value-number">{panos_fac:.1f}</div><div class="metric-subtitle-gray">Total Estado FAC</div></div>', unsafe_allow_html=True)
-        c_r3.markdown(f'<div class="metric-card"><div class="metric-title">Ratio ($ / Paño)</div><div class="metric-value-money">${ratio_peso_pano:,.0f}</div><div class="metric-subtitle-gray">Promedio de Venta</div></div>', unsafe_allow_html=True)
-        c_r4.markdown(f'<div class="metric-card"><div class="metric-title">Confirmado (Pesos)</div><div class="metric-value-money">${df[df["Estado_Fac"] == "SI"]["Precio"].sum():,.0f}</div><div class="metric-subtitle-green">Estado SI (Pendiente Cierre)</div></div>', unsafe_allow_html=True)
+        pesos_si = df_si['Precio'].sum()
+        panos_si = df_si['Paños'].sum()
+        
+        pesos_est = pesos_fac + pesos_si
+        panos_est = panos_fac + panos_si
+        
+        st.write("### 💰 Rendimiento y Proyección al Cierre")
+        c_r1, c_r2, c_r3 = st.columns(3)
+        
+        c_r1.markdown(f'''
+            <div class="metric-card">
+                <div class="metric-title">Facturado Actual (FAC)</div>
+                <div class="metric-value-money">${pesos_fac:,.0f}</div>
+                <div class="metric-subtitle-gray" style="font-size: 1.1rem; margin-top: 8px;">📦 {panos_fac:.1f} paños</div>
+            </div>
+        ''', unsafe_allow_html=True)
+        
+        c_r2.markdown(f'''
+            <div class="metric-card">
+                <div class="metric-title">Aprobado (SI)</div>
+                <div class="metric-value-money" style="color:#28a745;">${pesos_si:,.0f}</div>
+                <div class="metric-subtitle-green" style="font-size: 1.1rem; margin-top: 8px;">📦 {panos_si:.1f} paños</div>
+            </div>
+        ''', unsafe_allow_html=True)
+        
+        c_r3.markdown(f'''
+            <div class="metric-card" style="border: 2px solid #00235d; background-color: #f8f9fa;">
+                <div class="metric-title" style="color:#00235d;">Estimado a Cierre de Mes</div>
+                <div class="metric-value-money" style="color:#00235d;">${pesos_est:,.0f}</div>
+                <div class="metric-subtitle-gray" style="font-size: 1.1rem; color:#00235d; font-weight: bold; margin-top: 8px;">📦 {panos_est:.1f} paños totales</div>
+            </div>
+        ''', unsafe_allow_html=True)
         
         st.divider()
         
+        # --- DETALLE DE ESTADOS PENDIENTES ---
+        df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
+        df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
+        df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
+
         st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
         c_e1, c_e2, c_e3 = st.columns(3)
         c_e1.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Facturar</div><div class="metric-value-money">${df_tpf["Precio"].sum():,.0f}</div><div class="metric-subtitle-red">⚠️ {df_tpf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
