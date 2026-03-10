@@ -178,7 +178,6 @@ if 'memoria_turnos_v11' not in st.session_state:
 
 df = obtener_datos_maestros()
 
-# AGREGAMOS LA NUEVA PESTAÑA AL MENÚ
 tab_turnos, tab_prog, tab_fac, tab_kpi, tab_hist, tab_portal = st.tabs(["📋 Turnero Diario", "🛠️ Programación", "💰 Facturación", "📊 KPIs", "📅 Históricos", "🏢 Portal Empresas"])
 
 # ==========================================
@@ -464,14 +463,13 @@ with tab_hist:
         else: st.info("No hay datos con fechas válidas para mostrar el historial.")
 
 # ==========================================
-# PESTAÑA 6: PORTAL EMPRESAS (NUEVO)
+# PESTAÑA 6: PORTAL EMPRESAS
 # ==========================================
 with tab_portal:
     if not df.empty:
         st.subheader("🏢 Seguimiento de Unidades: Empresas del Grupo")
         st.write("Vista exclusiva para que los responsables de AUTOSOL, AUTOLUX y CIEL puedan ver el estado de sus vehículos, fechas de entrega y observaciones.")
         
-        # Filtramos buscando palabras clave en el nombre de la empresa
         df_grupo = df[df['Cliente'].str.contains('SOL|LUX|CIEL', case=False, na=False)].copy()
         
         if not df_grupo.empty:
@@ -487,7 +485,7 @@ with tab_portal:
             elif empresa_filtro == "CIEL / AUTOCIEL":
                 df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('CIEL', case=False, na=False)]
             
-            # Tarjetas de resumen para la empresa seleccionada
+            # Tarjetas de resumen
             en_proceso = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("PROCESO", na=False)])
             detenidos = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("DETENIDO", na=False)])
             terminados = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("TERM", na=False)])
@@ -499,13 +497,45 @@ with tab_portal:
             
             st.divider()
             
-            # Formatear la vista de la tabla
+            # Preparamos los DataFrames divididos
             df_vista_emp['Fecha Entrega'] = df_vista_emp['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-            
             vista_columnas = ['Cliente', 'Vehiculo', 'Patente', 'Estado_Taller', 'Fecha Entrega', 'Asesor', 'Observaciones']
-            df_mostrar = df_vista_emp[vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
             
-            st.dataframe(df_mostrar, hide_index=True, use_container_width=True)
+            mask_entregados = df_vista_emp['Estado_Taller'].str.contains('ENTREGADO', na=False)
+            
+            df_pendientes = df_vista_emp[~mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
+            df_entregados = df_vista_emp[mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
+            
+            st.write("#### ⏳ Vehículos en Taller (Pendientes de Entrega)")
+            st.caption("💡 *Puedes editar las observaciones haciendo doble clic en la celda (los cambios se mantienen en la pantalla mientras navegas).*")
+            
+            # Tabla Pendientes: Configurada para scroll horizontal y ancho grande en Observaciones
+            edited_pendientes = st.data_editor(
+                df_pendientes,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
+                    "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
+                    "Patente": st.column_config.TextColumn("Patente", disabled=True),
+                    "Estado Actual": st.column_config.TextColumn("Estado Actual", disabled=True),
+                    "Fecha Entrega": st.column_config.TextColumn("Fecha Entrega", disabled=True),
+                    "Asesor": st.column_config.TextColumn("Asesor", disabled=True),
+                    "Observaciones": st.column_config.TextColumn("📝 Observaciones (Doble Clic para editar)", width="large", max_chars=1000)
+                },
+                key="editor_observaciones_pendientes"
+            )
+
+            st.write("#### 🚚 Vehículos Entregados (Historial Reciente)")
+            st.dataframe(
+                df_entregados,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Observaciones": st.column_config.TextColumn("Observaciones", width="large")
+                }
+            )
+            
         else:
             st.info("No hay vehículos registrados para las empresas del grupo en este momento.")
 
