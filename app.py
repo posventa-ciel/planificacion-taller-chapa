@@ -127,6 +127,8 @@ def obtener_datos_maestros():
             if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        # Columna P
             if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  # Columna L
             if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         # Columna I
+            if len(cols) > 7: cols[7] = 'FECHA_TICKET'            # Columna H
+            if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    # Columna A
             d.columns = cols
             
             d.columns = d.columns.str.strip().str.upper()
@@ -137,10 +139,18 @@ def obtener_datos_maestros():
     df_raw = pd.concat(dfs, ignore_index=True)
     filas = []
     for _, row in df_raw.iterrows():
+        # Fechas Base
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         fecha_promesa_display = f_fin.date() if f_fin is not None else None
         if f_fin is None: f_fin = datetime.now() + timedelta(days=3650)
         mes_hist = f_fin.strftime('%Y-%m') if f_fin and f_fin.year < 2030 else "SIN FECHA"
+        
+        # Nuevas Fechas solicitadas
+        f_ingreso = parsear_fecha_español(row.get('FECHA_INGRESO_TALLER', ''))
+        fecha_ingreso_disp = f_ingreso.date() if f_ingreso is not None else None
+        
+        f_ticket = parsear_fecha_español(row.get('FECHA_TICKET', ''))
+        fecha_ticket_disp = f_ticket.date() if f_ticket is not None else None
         
         try:
             texto_panos = str(row.get('PAÑOS', '1')).replace(',', '.')
@@ -157,19 +167,18 @@ def obtener_datos_maestros():
         estado_taller = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper()
         if not estado_taller: estado_taller = "SIN ESTADO"
         
-        # Leemos forzosamente la Empresa (Columna P)
         cliente_val = str(row.get('EMPRESA_TALLER', 'PARTICULAR')).replace('nan', '').strip().upper()
         if not cliente_val: cliente_val = "PARTICULAR"
         
-        # Leemos forzosamente las Observaciones (Columna L)
         obs_val = str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
 
         filas.append({
             'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': str(row.get('ASESOR', 'SIN ASESOR')).strip().upper(),
             'Cliente': cliente_val, 'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')),
-            'Inicio': f_inicio, 'Fin': f_fin, 'Fecha_Promesa_Disp': fecha_promesa_display, 'Mes_Hist': mes_hist,
-            'Paños': panos, 'Estado_Fac': str(row.get('FAC', '')).strip().upper(), 'Estado_Taller': estado_taller, 
-            'Precio': precio_val, 'Observaciones': obs_val
+            'Inicio': f_inicio, 'Fin': f_fin, 'Fecha_Promesa_Disp': fecha_promesa_display, 
+            'Fecha_Ingreso': fecha_ingreso_disp, 'Fecha_Ticket': fecha_ticket_disp,
+            'Mes_Hist': mes_hist, 'Paños': panos, 'Estado_Fac': str(row.get('FAC', '')).strip().upper(), 
+            'Estado_Taller': estado_taller, 'Precio': precio_val, 'Observaciones': obs_val
         })
     return pd.DataFrame(filas)
 
@@ -337,7 +346,6 @@ with tab_fac:
     if not df.empty:
         st.subheader("Análisis de Facturación y Paños")
         
-        # --- NUEVA LÓGICA DE PROYECCIÓN AL CIERRE ---
         df_fac = df[df['Estado_Fac'] == 'FAC']
         df_si = df[df['Estado_Fac'] == 'SI']
         
@@ -379,7 +387,6 @@ with tab_fac:
         
         st.divider()
         
-        # --- DETALLE DE ESTADOS PENDIENTES ---
         df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
         df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
         df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
@@ -526,9 +533,19 @@ with tab_portal:
             
             st.divider()
             
-            # Preparamos los DataFrames divididos
+            # Formateamos Fechas
+            df_vista_emp['Fecha Ingreso'] = df_vista_emp['Fecha_Ingreso'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+            df_vista_emp['Fecha Ticket'] = df_vista_emp['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
             df_vista_emp['Fecha Entrega'] = df_vista_emp['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-            vista_columnas = ['Cliente', 'Vehiculo', 'Patente', 'Estado_Taller', 'Fecha Entrega', 'Asesor', 'Observaciones']
+            
+            # Agregamos las columnas vacías para que editen
+            df_vista_emp['Fecha Ingreso Concesionario'] = None
+            df_vista_emp['Asesor Concesionario'] = ""
+
+            vista_columnas = [
+                'Cliente', 'Vehiculo', 'Patente', 'Fecha Ingreso', 'Fecha Ticket', 'Estado_Taller', 
+                'Fecha Entrega', 'Asesor', 'Fecha Ingreso Concesionario', 'Asesor Concesionario', 'Observaciones'
+            ]
             
             mask_entregados = df_vista_emp['Estado_Taller'].str.contains('ENTREGADO', na=False)
             
@@ -536,9 +553,9 @@ with tab_portal:
             df_entregados = df_vista_emp[mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
             
             st.write("#### ⏳ Vehículos en Taller (Pendientes de Entrega)")
-            st.caption("💡 *Puedes editar las observaciones haciendo doble clic en la celda (los cambios se mantienen en la pantalla mientras navegas).*")
+            st.caption("💡 *Puedes editar las observaciones, fechas y nombres haciendo doble clic en la celda (los cambios se mantienen en la pantalla mientras navegas).*")
             
-            # Tabla Pendientes: Configurada para scroll horizontal y ancho grande en Observaciones
+            # Tabla Editables (Pendientes)
             edited_pendientes = st.data_editor(
                 df_pendientes,
                 hide_index=True,
@@ -547,10 +564,14 @@ with tab_portal:
                     "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
                     "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True),
                     "Patente": st.column_config.TextColumn("Patente", disabled=True),
+                    "Fecha Ingreso": st.column_config.TextColumn("Ingreso Taller", disabled=True),
+                    "Fecha Ticket": st.column_config.TextColumn("1ra Fecha Prom.", disabled=True),
                     "Estado Actual": st.column_config.TextColumn("Estado Actual", disabled=True),
                     "Fecha Entrega": st.column_config.TextColumn("Fecha Entrega", disabled=True),
-                    "Asesor": st.column_config.TextColumn("Asesor", disabled=True),
-                    "Observaciones": st.column_config.TextColumn("📝 Observaciones (Doble Clic para editar)", width="large", max_chars=1000)
+                    "Asesor": st.column_config.TextColumn("Asesor Taller", disabled=True),
+                    "Fecha Ingreso Concesionario": st.column_config.DateColumn("🗓️ Ingreso Conces.", format="DD/MM/YYYY"),
+                    "Asesor Concesionario": st.column_config.TextColumn("👤 Asesor Conces."),
+                    "Observaciones": st.column_config.TextColumn("📝 Observaciones (Doble Clic)", width="large", max_chars=1000)
                 },
                 key="editor_observaciones_pendientes"
             )
