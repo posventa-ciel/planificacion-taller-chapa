@@ -37,7 +37,7 @@ col_tit, col_btn = st.columns([3, 1])
 with col_tit:
     st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
 with col_btn:
-    st.write("") # Espaciador
+    st.write("") 
     if st.button("🔄 Forzar Actualización desde Excel", use_container_width=True):
         st.cache_data.clear()
         st.success("¡Datos actualizados!")
@@ -135,7 +135,6 @@ def obtener_datos_maestros():
             d = pd.read_csv(url, dtype=str)
             
             cols = list(d.columns)
-            # FORZAMOS LA EXISTENCIA DE COLUMNAS HASTA LA V (22 elementos)
             while len(cols) < 22:
                 cols.append(f"VACIA_{len(cols)}")
                 
@@ -146,6 +145,7 @@ def obtener_datos_maestros():
             if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  # Columna L
             if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         # Columna I
             if len(cols) > 7: cols[7] = 'FECHA_TICKET'            # Columna H
+            if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            # Columna G (Nueva: Días de reparación)
             if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    # Columna A
             d.columns = cols
             
@@ -175,6 +175,14 @@ def obtener_datos_maestros():
             panos = float(numeros[0]) if numeros else 0.0
         except: panos = 0.0
         
+        # LECTURA DE COLUMNA G (DÍAS DE TRABAJO)
+        try:
+            texto_dias = str(row.get('DIAS_TRABAJO', '0')).replace(',', '.')
+            if texto_dias.lower() == 'nan' or texto_dias.strip() == '' or 'VACIA' in texto_dias: texto_dias = '0'
+            nums_dias = re.findall(r"[-+]?\d*\.\d+|\d+", texto_dias)
+            dias_reparacion = float(nums_dias[0]) if nums_dias else 0.0
+        except: dias_reparacion = 0.0
+
         f_inicio = f_fin - timedelta(days=max(1, int(panos)))
         
         precio_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
@@ -192,7 +200,6 @@ def obtener_datos_maestros():
         asesor_val = str(row.get('ASESOR', '')).strip().upper()
         if asesor_val == 'NAN' or asesor_val == '': asesor_val = "SIN ASIGNAR"
 
-        # LECTURA CORREGIDA DE FASE
         fase_taller_val = str(row.get('FASE_TALLER', '')).replace('nan', '').strip().upper()
         if not fase_taller_val or fase_taller_val == 'VACIA_20': fase_taller_val = "SIN FASE ASIGNADA"
 
@@ -201,7 +208,7 @@ def obtener_datos_maestros():
             'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')),
             'Inicio': f_inicio, 'Fin': f_fin, 'Fecha_Promesa_Disp': fecha_promesa_display, 
             'Fecha_Ingreso': fecha_ingreso_disp, 'Fecha_Ticket': fecha_ticket_disp,
-            'Mes_Hist': mes_hist, 'Paños': panos, 'Tipo_ABC': clasificar_abc(panos),
+            'Mes_Hist': mes_hist, 'Paños': panos, 'Dias_Reparacion': dias_reparacion, 'Tipo_ABC': clasificar_abc(panos),
             'Estado_Fac': str(row.get('ESTADO_FAC', '')).strip().upper(), 
             'Estado_Taller': estado_taller, 'Fase_Taller': fase_taller_val, 
             'Precio': precio_val, 'Observaciones': obs_val
@@ -327,30 +334,46 @@ with tab_prog:
             nombre_corto = asesor_filtro_prog.split()[0].upper()
             df_prog_filtrado = df_prog_filtrado[df_prog_filtrado['Asesor'].str.contains(nombre_corto, case=False, na=False)]
 
-        st.markdown("### 📊 Análisis de Carga por Método Toyota (ABC)")
-        st.write("Distribución de la carga de trabajo actual en el taller, clasificada por tamaño del trabajo.")
-        
         df_en_proceso = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO", na=False)]
         
+        # --- NUEVA SECCIÓN: TERMÓMETRO DE CAPACIDAD ---
+        st.markdown("### 🚥 Termómetro de Capacidad y Asignación")
+        st.write("Calcula la saturación actual sumando los días de trabajo pendientes de los vehículos EN PROCESO. Usá esto para decidir a qué grupo asignarle el próximo auto.")
+        
         if not df_en_proceso.empty:
-            c_abc1, c_abc2 = st.columns([1, 2])
-            with c_abc1:
-                resumen_abc = df_en_proceso.groupby('Tipo_ABC')['Patente'].count().reset_index().rename(columns={'Patente': 'Cant. Vehículos'})
-                st.dataframe(resumen_abc, hide_index=True, use_container_width=True)
-            with c_abc2:
-                fig_abc = px.pie(resumen_abc, values='Cant. Vehículos', names='Tipo_ABC', hole=0.4, title="Vehículos EN PROCESO por Clasificación ABC", color_discrete_sequence=['#28a745', '#ffc107', '#dc3545'])
-                st.plotly_chart(fig_abc, use_container_width=True)
+            resumen_capacidad = df_en_proceso.groupby('Grupo').agg(
+                Autos=('Patente', 'count'),
+                Panos_Activos=('Paños', 'sum'),
+                Dias_Acumulados=('Dias_Reparacion', 'sum')
+            ).reset_index()
+            
+            cols_cap = st.columns(len(resumen_capacidad))
+            for i, row in resumen_capacidad.iterrows():
+                with cols_cap[i]:
+                    color_dias = "#28a745" if row['Dias_Acumulados'] < 20 else "#ffc107" if row['Dias_Acumulados'] < 40 else "#dc3545"
+                    st.markdown(f"""
+                    <div style='background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
+                        <h4 style='color: #00235d; margin-top: 0;'>{row['Grupo']}</h4>
+                        <h1 style='color: {color_dias}; margin: 10px 0;'>{row['Dias_Acumulados']:.1f} días</h1>
+                        <p style='color: #6c757d; margin-bottom: 0;'>Carga total estimada</p>
+                        <hr style='margin: 10px 0;'>
+                        <div style='display: flex; justify-content: space-around;'>
+                            <span style='font-size: 0.9em;'>🚗 {row['Autos']} autos</span>
+                            <span style='font-size: 0.9em;'>📦 {row['Panos_Activos']:.1f} paños</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
         else:
-            st.info("No hay vehículos EN PROCESO para analizar carga.")
+            st.info("No hay vehículos en proceso para calcular capacidad.")
 
         st.divider()
+
         st.markdown("### 📋 Tablero Kanban de Producción (Reemplazo Fichines)")
         st.write("Acá vas a ver los vehículos moviéndose según la columna 'Fase Taller' del Excel.")
         
         fases_detectadas = sorted(list(df_en_proceso['Fase_Taller'].unique()))
         if "SIN FASE ASIGNADA" not in fases_detectadas: fases_detectadas.append("SIN FASE ASIGNADA")
         
-        # Crear columnas dinámicas basadas en las fases que existan
         cols_kanban = st.columns(len(fases_detectadas))
         for idx, fase in enumerate(fases_detectadas):
             with cols_kanban[idx]:
@@ -362,36 +385,23 @@ with tab_prog:
                         st.markdown(f"""
                         <div style='background: white; padding: 10px; margin-top: 10px; border-radius: 5px; border-left: 5px solid {color_tipo}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);'>
                             <strong>{row['Patente']}</strong> - {row['Vehiculo'][:15]}<br>
-                            <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} paños | {row['Tipo_ABC']}</span><br>
-                            <span style='font-size: 0.8em; color: #00235d;'>Grupo: {row['Grupo']}</span>
+                            <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} paños | ⏱️ {row['Dias_Reparacion']} Días</span><br>
+                            <span style='font-size: 0.8em; color: #00235d;'>{row['Tipo_ABC']} - Grupo: {row['Grupo']}</span>
                         </div>
                         """, unsafe_allow_html=True)
                 else:
                     st.caption("Vacío")
 
         st.divider()
-        st.markdown("### 🚥 Detalle General de Estados")
-        estados_map = [("⏳ EN PROCESO (Detalle)", "PROCESO"), ("⛔ DETENIDOS", "DETENIDO"), ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), ("🚚 ENTREGADOS", "ENTREGADO")]
-        for titulo, match in estados_map:
-            if "DETENIDO" in match: st.error(f"#### {titulo}")
-            else: st.write(f"#### {titulo}")
-            col1, col2 = st.columns(2)
-            
-            def dibujar_tabla(col, grupo_nombre, m_key):
-                d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
-                d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
-                with col:
-                    st.caption(f"**{grupo_nombre}**")
-                    if not d_e.empty:
-                        d_e = d_e.sort_values(by='Fin', ascending=True)
-                        d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-                        df_vista = d_e[['Estado_Taller', 'Fase_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
-                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}")
-                    else: st.caption(f"Sin vehículos asignados.")
-
-            dibujar_tabla(col1, "GRUPO UNO", match)
-            dibujar_tabla(col2, "GRUPO DOS", match)
-            st.divider()
+        st.markdown("### 📊 Análisis de Carga por Método Toyota (ABC)")
+        if not df_en_proceso.empty:
+            c_abc1, c_abc2 = st.columns([1, 2])
+            with c_abc1:
+                resumen_abc = df_en_proceso.groupby('Tipo_ABC')['Patente'].count().reset_index().rename(columns={'Patente': 'Cant. Vehículos'})
+                st.dataframe(resumen_abc, hide_index=True, use_container_width=True)
+            with c_abc2:
+                fig_abc = px.pie(resumen_abc, values='Cant. Vehículos', names='Tipo_ABC', hole=0.4, title="Vehículos EN PROCESO por Clasificación ABC", color_discrete_sequence=['#28a745', '#ffc107', '#dc3545'])
+                st.plotly_chart(fig_abc, use_container_width=True)
 
 # ==========================================
 # PESTAÑA 3: PORTAL EMPRESAS 
