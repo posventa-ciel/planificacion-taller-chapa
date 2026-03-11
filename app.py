@@ -32,7 +32,17 @@ st.markdown("""<style>
     .kanban-col { background-color: #f8f9fa; border-radius: 8px; padding: 10px; border: 1px solid #e9ecef; }
 </style>""", unsafe_allow_html=True)
 
-st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
+# --- ENCABEZADO Y BOTÓN DE ACTUALIZACIÓN ---
+col_tit, col_btn = st.columns([3, 1])
+with col_tit:
+    st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
+with col_btn:
+    st.write("") # Espaciador
+    if st.button("🔄 Forzar Actualización desde Excel", use_container_width=True):
+        st.cache_data.clear()
+        st.success("¡Datos actualizados!")
+        time.sleep(0.5)
+        st.rerun()
 
 # --- CONFIGURACIÓN ---
 ID_NUEVO_SHEET = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
@@ -125,7 +135,10 @@ def obtener_datos_maestros():
             d = pd.read_csv(url, dtype=str)
             
             cols = list(d.columns)
-            # CORRIMOS LAS COLUMNAS SEGÚN LO NUEVO
+            # FORZAMOS LA EXISTENCIA DE COLUMNAS HASTA LA V (22 elementos)
+            while len(cols) < 22:
+                cols.append(f"VACIA_{len(cols)}")
+                
             if len(cols) > 21: cols[21] = 'ESTADO_FAC'            # Columna V
             if len(cols) > 20: cols[20] = 'FASE_TALLER'           # Columna U
             if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         # Columna T
@@ -179,8 +192,9 @@ def obtener_datos_maestros():
         asesor_val = str(row.get('ASESOR', '')).strip().upper()
         if asesor_val == 'NAN' or asesor_val == '': asesor_val = "SIN ASIGNAR"
 
+        # LECTURA CORREGIDA DE FASE
         fase_taller_val = str(row.get('FASE_TALLER', '')).replace('nan', '').strip().upper()
-        if not fase_taller_val: fase_taller_val = "SIN FASE ASIGNADA"
+        if not fase_taller_val or fase_taller_val == 'VACIA_20': fase_taller_val = "SIN FASE ASIGNADA"
 
         filas.append({
             'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': asesor_val, 'Cliente': cliente_val,
@@ -209,7 +223,7 @@ tab_turnos, tab_prog, tab_portal, tab_fac, tab_kpi, tab_hist = st.tabs([
 ])
 
 # ==========================================
-# PESTAÑA 1: TURNERO DIARIO (Sin cambios mayores)
+# PESTAÑA 1: TURNERO DIARIO 
 # ==========================================
 with tab_turnos:
     st.subheader("Recepción de Vehículos")
@@ -555,6 +569,20 @@ with tab_fac:
                 fig_g_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_g_pesos, use_container_width=True)
 
+            st.write("#### 🥧 Porcentaje de Participación (Cierre Estimado)")
+            col_g_p1, col_g_p2 = st.columns(2)
+            df_pie_g = tabla_grupo.reset_index()
+            with col_g_p1:
+                df_panos_pie = df_pie_g[df_pie_g['📦 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_panos_pie.empty:
+                    fig_pie_g_panos = px.pie(df_panos_pie, values='📦 EST. CIERRE (FAC+SI)', names='Grupo', hole=0.4, title='Distribución de Paños Totales')
+                    st.plotly_chart(fig_pie_g_panos, use_container_width=True)
+            with col_g_p2:
+                df_pesos_pie = df_pie_g[df_pie_g['💰 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_pesos_pie.empty:
+                    fig_pie_g_pesos = px.pie(df_pesos_pie, values='💰 EST. CIERRE (FAC+SI)', names='Grupo', hole=0.4, title='Distribución de Ingresos Totales ($)')
+                    st.plotly_chart(fig_pie_g_pesos, use_container_width=True)
+
             st.dataframe(tabla_grupo.style.format({
                 '📦 FAC': '{:.1f}', '📦 SI': '{:.1f}', '📦 EST. CIERRE (FAC+SI)': '{:.1f}', '📦 OTROS (En Taller)': '{:.1f}',
                 '💰 FAC': '${:,.0f}', '💰 SI': '${:,.0f}', '💰 EST. CIERRE (FAC+SI)': '${:,.0f}', '💰 OTROS (En Taller)': '${:,.0f}'
@@ -579,6 +607,20 @@ with tab_fac:
                 fig_a_pesos = px.bar(df_a_pesos_chart, x='Asesor', y='Precio', color='Métrica', barmode='group', text_auto='$.2s', title='💰 Montos por Asesor (Escalera al Cierre)', color_discrete_map=colores_grafico)
                 fig_a_pesos.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), legend_title_text='')
                 st.plotly_chart(fig_a_pesos, use_container_width=True)
+
+            st.write("#### 🥧 Porcentaje de Participación (Cierre Estimado)")
+            col_a_p1, col_a_p2 = st.columns(2)
+            df_pie_a = tabla_asesor.reset_index()
+            with col_a_p1:
+                df_panos_pie_a = df_pie_a[df_pie_a['📦 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_panos_pie_a.empty:
+                    fig_pie_a_panos = px.pie(df_panos_pie_a, values='📦 EST. CIERRE (FAC+SI)', names='Asesor', hole=0.4, title='Distribución de Paños Totales')
+                    st.plotly_chart(fig_pie_a_panos, use_container_width=True)
+            with col_a_p2:
+                df_pesos_pie_a = df_pie_a[df_pie_a['💰 EST. CIERRE (FAC+SI)'] > 0]
+                if not df_pesos_pie_a.empty:
+                    fig_pie_a_pesos = px.pie(df_pesos_pie_a, values='💰 EST. CIERRE (FAC+SI)', names='Asesor', hole=0.4, title='Distribución de Ingresos Totales ($)')
+                    st.plotly_chart(fig_pie_a_pesos, use_container_width=True)
 
             st.dataframe(tabla_asesor.style.format({
                 '📦 FAC': '{:.1f}', '📦 SI': '{:.1f}', '📦 EST. CIERRE (FAC+SI)': '{:.1f}', '📦 OTROS (En Taller)': '{:.1f}',
