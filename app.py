@@ -138,6 +138,7 @@ def obtener_datos_maestros():
             if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
             if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        
             if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  
+            if len(cols) > 9: cols[9] = 'HORA_ENTREGA'            # Columna J 
             if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         
             if len(cols) > 7: cols[7] = 'FECHA_TICKET'            
             if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
@@ -179,12 +180,14 @@ def obtener_datos_maestros():
         if asesor == 'NAN' or not asesor: asesor = "SIN ASIGNAR"
         fase = str(row.get('FASE_TALLER', '')).replace('nan', '').strip().upper()
         if not fase or fase == 'VACIA_20': fase = "SIN FASE ASIGNADA"
+        hora_entrega = str(row.get('HORA_ENTREGA', '')).replace('nan', '').strip()
 
         filas.append({
             'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': asesor, 'Cliente': cliente,
             'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')),
             'Inicio': f_fin - timedelta(days=max(1, int(panos))), 'Fin': f_fin, 'Fecha_Promesa_Disp': f_fin_disp, 
             'Fecha_Ingreso': f_ingreso.date() if f_ingreso else None, 'Fecha_Ticket': f_ticket.date() if f_ticket else None,
+            'Hora_Entrega': hora_entrega,
             'Mes_Hist': mes_hist, 'Paños': panos, 'Dias_Reparacion': dias_rep, 'Tipo_ABC': clasificar_abc(panos),
             'Estado_Fac': str(row.get('ESTADO_FAC', '')).strip().upper(), 
             'Estado_Taller': estado, 'Fase_Taller': fase, 'Precio': precio_val, 'Observaciones': str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
@@ -291,6 +294,52 @@ with tab_turnos:
                 for idx, row in edited_recibidos.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR']] = row[['Recibido', 'Fotos', 'OR']]
                 st.success("Correcciones aplicadas."); time.sleep(0.5); st.rerun()
 
+    # --- NUEVA SECCIÓN: TURNERO DE ENTREGAS ---
+    st.divider()
+    st.subheader("🚚 Agenda de Entregas (Vehículos a Salir)")
+    st.write("Basado en la Fecha Promesa del sistema. Ayuda a organizar los horarios en que los clientes vendrán a retirar las unidades.")
+    
+    if not df.empty:
+        df_no_entregados = df[~df['Estado_Taller'].str.contains("ENTREGADO", na=False)]
+        
+        entregas_hoy = df_no_entregados[df_no_entregados['Fecha_Promesa_Disp'] == hoy].copy()
+        entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
+        
+        col_eh, col_ea = st.columns(2)
+        
+        with col_eh:
+            st.markdown("#### 🟢 Entregas Programadas para HOY")
+            if not entregas_hoy.empty:
+                entregas_hoy = entregas_hoy.sort_values(by='Hora_Entrega')
+                st.dataframe(
+                    entregas_hoy[['Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Grupo', 'Estado_Taller']], 
+                    hide_index=True, 
+                    use_container_width=True,
+                    column_config={
+                        "Hora_Entrega": st.column_config.TextColumn("⌚ Hora"),
+                        "Patente": "Patente", "Vehiculo": "Vehículo", "Asesor": "Asesor", "Grupo": "Grupo", "Estado_Taller": "Estado Actual"
+                    }
+                )
+            else:
+                st.info("No hay entregas programadas para el día de hoy.")
+                
+        with col_ea:
+            st.markdown("#### 🔴 Entregas Atrasadas (Pendientes)")
+            if not entregas_atrasadas.empty:
+                entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp')
+                entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                st.dataframe(
+                    entregas_atrasadas[['Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo', 'Estado_Taller']], 
+                    hide_index=True, 
+                    use_container_width=True,
+                    column_config={
+                        "Fecha Prom.": st.column_config.TextColumn("📅 Fecha Vencida"),
+                        "Patente": "Patente", "Vehiculo": "Vehículo", "Asesor": "Asesor", "Grupo": "Grupo", "Estado_Taller": "Estado Actual"
+                    }
+                )
+            else:
+                st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
+
 # ==========================================
 # PESTAÑA 2: PROGRAMACIÓN Y KANBAN
 # ==========================================
@@ -336,27 +385,19 @@ with tab_prog:
 
         st.divider()
 
-        # --- LÓGICA DE KANBAN MEJORADA ---
         st.markdown("### 📋 Tablero Kanban de Producción (Cadena de Montaje)")
         st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
         
-        # Filtramos PROCESO y DETENIDO para el Kanban
         df_kanban = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO|DETENIDO", na=False)].copy()
-        
-        # Forzamos la fase de los detenidos para agruparlos
         df_kanban.loc[df_kanban['Estado_Taller'].str.contains("DETENIDO", na=False), 'Fase_Taller'] = "⛔ DETENIDOS"
         
-        # Limpiamos textos para que el orden encaje perfecto
         df_kanban['Fase_Taller'] = df_kanban['Fase_Taller'].str.strip().str.upper()
         df_kanban['Fase_Taller'] = df_kanban['Fase_Taller'].replace({"PREPARACION": "PREPARACIÓN"})
         
-        # El orden maestro de la cadena
         orden_ideal = ["SIN FASE ASIGNADA", "CHAPA", "PREPARACIÓN", "PINTURA", "ARMADO", "PULIDO", "⛔ DETENIDOS"]
         
         fases_presentes = list(df_kanban['Fase_Taller'].unique())
         if "SIN FASE ASIGNADA" not in fases_presentes: fases_presentes.append("SIN FASE ASIGNADA")
-        
-        # Ordenamos las columnas basándonos en el orden maestro
         fases_ordenadas = sorted(fases_presentes, key=lambda x: orden_ideal.index(x) if x in orden_ideal else 99)
 
         cols_kanban = st.columns(len(fases_ordenadas))
@@ -367,7 +408,7 @@ with tab_prog:
                 if not df_fase.empty:
                     for _, row in df_fase.iterrows():
                         color_tipo = "#28a745" if "A" in row['Tipo_ABC'] else "#ffc107" if "B" in row['Tipo_ABC'] else "#dc3545"
-                        if fase == "⛔ DETENIDOS": color_tipo = "#6c757d" # Color gris para los detenidos
+                        if fase == "⛔ DETENIDOS": color_tipo = "#6c757d"
                         
                         st.markdown(f"""
                         <div style='background: white; padding: 10px; margin-top: 10px; border-radius: 5px; border-left: 5px solid {color_tipo}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);'>
@@ -406,7 +447,6 @@ with tab_prog:
                         d_e = d_e.sort_values(by='Fin', ascending=True)
                         d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
                         
-                        # Las tablas de Terminados y Entregados ya no muestran Fase Taller
                         if m_key in ["TERM PEND", "ENTREGADO"]:
                             df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
                         else:
