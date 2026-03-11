@@ -145,7 +145,7 @@ def obtener_datos_maestros():
             if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  # Columna L
             if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         # Columna I
             if len(cols) > 7: cols[7] = 'FECHA_TICKET'            # Columna H
-            if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            # Columna G (Nueva: Días de reparación)
+            if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            # Columna G (Días de reparación)
             if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    # Columna A
             d.columns = cols
             
@@ -175,7 +175,6 @@ def obtener_datos_maestros():
             panos = float(numeros[0]) if numeros else 0.0
         except: panos = 0.0
         
-        # LECTURA DE COLUMNA G (DÍAS DE TRABAJO)
         try:
             texto_dias = str(row.get('DIAS_TRABAJO', '0')).replace(',', '.')
             if texto_dias.lower() == 'nan' or texto_dias.strip() == '' or 'VACIA' in texto_dias: texto_dias = '0'
@@ -324,7 +323,7 @@ with tab_turnos:
 # PESTAÑA 2: PROGRAMACIÓN Y KANBAN
 # ==========================================
 with tab_prog:
-    st.subheader("🛠️ Programación y Flujo de Trabajo (Kanban)")
+    st.subheader("🛠️ Programación y Flujo de Trabajo")
     if not df.empty:
         col_filtro, _ = st.columns([1, 2])
         with col_filtro: asesor_filtro_prog = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA, key="filtro_asesor_prog")
@@ -336,26 +335,31 @@ with tab_prog:
 
         df_en_proceso = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO", na=False)]
         
-        # --- NUEVA SECCIÓN: TERMÓMETRO DE CAPACIDAD ---
-        st.markdown("### 🚥 Termómetro de Capacidad y Asignación")
-        st.write("Calcula la saturación actual sumando los días de trabajo pendientes de los vehículos EN PROCESO. Usá esto para decidir a qué grupo asignarle el próximo auto.")
+        # --- NUEVA LÓGICA DE CAPACIDAD (BASADA EN PAÑOS REALES, NO EN ESTADÍA) ---
+        st.markdown("### 🚥 Termómetro de Capacidad (Saturación Real)")
+        st.write("Calculado en base a la cantidad de **Paños Activos** dividida por la capacidad teórica de producción de cada grupo (11.5 paños/día).")
+        
+        CAPACIDAD_DIARIA_GRUPO = 11.5 # 505 paños al mes / 22 días = 23 paños/día taller -> 11.5 por grupo
         
         if not df_en_proceso.empty:
             resumen_capacidad = df_en_proceso.groupby('Grupo').agg(
                 Autos=('Patente', 'count'),
-                Panos_Activos=('Paños', 'sum'),
-                Dias_Acumulados=('Dias_Reparacion', 'sum')
+                Panos_Activos=('Paños', 'sum')
             ).reset_index()
+            
+            # Calculamos la carga de trabajo real en DÍAS
+            resumen_capacidad['Dias_Carga_Real'] = resumen_capacidad['Panos_Activos'] / CAPACIDAD_DIARIA_GRUPO
             
             cols_cap = st.columns(len(resumen_capacidad))
             for i, row in resumen_capacidad.iterrows():
                 with cols_cap[i]:
-                    color_dias = "#28a745" if row['Dias_Acumulados'] < 20 else "#ffc107" if row['Dias_Acumulados'] < 40 else "#dc3545"
+                    dias_reales = row['Dias_Carga_Real']
+                    color_dias = "#28a745" if dias_reales < 4 else "#ffc107" if dias_reales < 7 else "#dc3545"
                     st.markdown(f"""
                     <div style='background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
                         <h4 style='color: #00235d; margin-top: 0;'>{row['Grupo']}</h4>
-                        <h1 style='color: {color_dias}; margin: 10px 0;'>{row['Dias_Acumulados']:.1f} días</h1>
-                        <p style='color: #6c757d; margin-bottom: 0;'>Carga total estimada</p>
+                        <h1 style='color: {color_dias}; margin: 10px 0;'>{dias_reales:.1f} Días</h1>
+                        <p style='color: #6c757d; margin-bottom: 0;'>de trabajo atrasado</p>
                         <hr style='margin: 10px 0;'>
                         <div style='display: flex; justify-content: space-around;'>
                             <span style='font-size: 0.9em;'>🚗 {row['Autos']} autos</span>
@@ -385,7 +389,7 @@ with tab_prog:
                         st.markdown(f"""
                         <div style='background: white; padding: 10px; margin-top: 10px; border-radius: 5px; border-left: 5px solid {color_tipo}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);'>
                             <strong>{row['Patente']}</strong> - {row['Vehiculo'][:15]}<br>
-                            <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} paños | ⏱️ {row['Dias_Reparacion']} Días</span><br>
+                            <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} paños | Lead: {row['Dias_Reparacion']} d.</span><br>
                             <span style='font-size: 0.8em; color: #00235d;'>{row['Tipo_ABC']} - Grupo: {row['Grupo']}</span>
                         </div>
                         """, unsafe_allow_html=True)
@@ -402,6 +406,41 @@ with tab_prog:
             with c_abc2:
                 fig_abc = px.pie(resumen_abc, values='Cant. Vehículos', names='Tipo_ABC', hole=0.4, title="Vehículos EN PROCESO por Clasificación ABC", color_discrete_sequence=['#28a745', '#ffc107', '#dc3545'])
                 st.plotly_chart(fig_abc, use_container_width=True)
+
+        # --- TABLAS DE ESTADO RESTAURADAS Y BIEN VISIBLES ---
+        st.divider()
+        st.markdown("## 📑 Listado Completo de Vehículos (Por Estado)")
+        st.write("Acá podés revisar el listado auto por auto para ver patentes, paños y demoras, tal cual lo tenías antes.")
+        
+        estados_map = [
+            ("⏳ EN PROCESO", "PROCESO"), 
+            ("⛔ DETENIDOS", "DETENIDO"), 
+            ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), 
+            ("🚚 ENTREGADOS", "ENTREGADO")
+        ]
+        
+        for titulo, match in estados_map:
+            if "DETENIDO" in match: st.error(f"#### {titulo}")
+            else: st.markdown(f"#### {titulo}")
+            
+            col1, col2 = st.columns(2)
+            
+            def dibujar_tabla(col, grupo_nombre, m_key):
+                d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
+                d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
+                with col:
+                    st.caption(f"**{grupo_nombre}**")
+                    if not d_e.empty:
+                        d_e = d_e.sort_values(by='Fin', ascending=True)
+                        d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+                        df_vista = d_e[['Estado_Taller', 'Fase_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
+                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle")
+                    else: 
+                        st.caption(f"Sin vehículos en este estado.")
+
+            dibujar_tabla(col1, "GRUPO UNO", match)
+            dibujar_tabla(col2, "GRUPO DOS", match)
+            st.markdown("<br>", unsafe_allow_html=True) # Espacio extra entre tablas
 
 # ==========================================
 # PESTAÑA 3: PORTAL EMPRESAS 
