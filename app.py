@@ -308,7 +308,7 @@ with tab_prog:
         df_en_proceso = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO", na=False)]
         
         st.markdown(f"### 🚥 Termómetro de Capacidad (Mes de {DIAS_HABILES_MES} días hábiles)")
-        st.write(f"Calculado en base a los **Paños Activos** divididos por la capacidad teórica de producción ({CAPACIDAD_DIARIA_GRUPO:.1f} paños/día por grupo).")
+        st.write(f"Calculado en base a los **Paños Activos** divididos por la capacidad teórica de producción ({CAPACIDAD_DIARIA_GRUPO:.1f} paños/día por grupo). No incluye vehículos detenidos.")
         
         if not df_en_proceso.empty:
             resumen_capacidad = df_en_proceso.groupby('Grupo').agg(Autos=('Patente', 'count'), Panos_Activos=('Paños', 'sum')).reset_index()
@@ -336,23 +336,44 @@ with tab_prog:
 
         st.divider()
 
-        st.markdown("### 📋 Tablero Kanban de Producción (Reemplazo Fichines)")
-        st.write("Acá vas a ver los vehículos moviéndose según la columna 'Fase Taller' del Excel.")
-        fases_detectadas = sorted(list(df_en_proceso['Fase_Taller'].unique()))
-        if "SIN FASE ASIGNADA" not in fases_detectadas: fases_detectadas.append("SIN FASE ASIGNADA")
-        cols_kanban = st.columns(len(fases_detectadas))
-        for idx, fase in enumerate(fases_detectadas):
+        # --- LÓGICA DE KANBAN MEJORADA ---
+        st.markdown("### 📋 Tablero Kanban de Producción (Cadena de Montaje)")
+        st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
+        
+        # Filtramos PROCESO y DETENIDO para el Kanban
+        df_kanban = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO|DETENIDO", na=False)].copy()
+        
+        # Forzamos la fase de los detenidos para agruparlos
+        df_kanban.loc[df_kanban['Estado_Taller'].str.contains("DETENIDO", na=False), 'Fase_Taller'] = "⛔ DETENIDOS"
+        
+        # Limpiamos textos para que el orden encaje perfecto
+        df_kanban['Fase_Taller'] = df_kanban['Fase_Taller'].str.strip().str.upper()
+        df_kanban['Fase_Taller'] = df_kanban['Fase_Taller'].replace({"PREPARACION": "PREPARACIÓN"})
+        
+        # El orden maestro de la cadena
+        orden_ideal = ["SIN FASE ASIGNADA", "CHAPA", "PREPARACIÓN", "PINTURA", "ARMADO", "PULIDO", "⛔ DETENIDOS"]
+        
+        fases_presentes = list(df_kanban['Fase_Taller'].unique())
+        if "SIN FASE ASIGNADA" not in fases_presentes: fases_presentes.append("SIN FASE ASIGNADA")
+        
+        # Ordenamos las columnas basándonos en el orden maestro
+        fases_ordenadas = sorted(fases_presentes, key=lambda x: orden_ideal.index(x) if x in orden_ideal else 99)
+
+        cols_kanban = st.columns(len(fases_ordenadas))
+        for idx, fase in enumerate(fases_ordenadas):
             with cols_kanban[idx]:
-                st.markdown(f"<div class='kanban-col'><h4 style='text-align:center; color:#00235d;'>{fase}</h4></div>", unsafe_allow_html=True)
-                df_fase = df_en_proceso[df_en_proceso['Fase_Taller'] == fase]
+                st.markdown(f"<div class='kanban-col'><h4 style='text-align:center; color:#00235d; font-size: 1rem;'>{fase}</h4></div>", unsafe_allow_html=True)
+                df_fase = df_kanban[df_kanban['Fase_Taller'] == fase]
                 if not df_fase.empty:
                     for _, row in df_fase.iterrows():
                         color_tipo = "#28a745" if "A" in row['Tipo_ABC'] else "#ffc107" if "B" in row['Tipo_ABC'] else "#dc3545"
+                        if fase == "⛔ DETENIDOS": color_tipo = "#6c757d" # Color gris para los detenidos
+                        
                         st.markdown(f"""
                         <div style='background: white; padding: 10px; margin-top: 10px; border-radius: 5px; border-left: 5px solid {color_tipo}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);'>
                             <strong>{row['Patente']}</strong> - {row['Vehiculo'][:15]}<br>
                             <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} paños | Lead: {row['Dias_Reparacion']} d.</span><br>
-                            <span style='font-size: 0.8em; color: #00235d;'>{row['Tipo_ABC']} - Grupo: {row['Grupo']}</span>
+                            <span style='font-size: 0.8em; color: #00235d;'>{row['Tipo_ABC']} - {row['Grupo']}</span>
                         </div>
                         """, unsafe_allow_html=True)
                 else: st.caption("Vacío")
@@ -385,7 +406,7 @@ with tab_prog:
                         d_e = d_e.sort_values(by='Fin', ascending=True)
                         d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
                         
-                        # CORRECCIÓN DE COLUMNAS PARA TERMINADOS/ENTREGADOS
+                        # Las tablas de Terminados y Entregados ya no muestran Fase Taller
                         if m_key in ["TERM PEND", "ENTREGADO"]:
                             df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
                         else:
