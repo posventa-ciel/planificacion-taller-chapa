@@ -40,8 +40,24 @@ MESES_ES = {'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio'
 DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 ASESORES_LISTA = ["SIN ASIGNAR", "CESAR OLIVA", "JAVIER GUTIERREZ", "ANDREA MARTINS"]
 CLIENTES_LISTA = ["CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "CIEL USADO", "AUTOSOL", "AUTOSOL SEGURO", "AUTOSOL OKM", "AUTOSOL USADO", "AUTOLUX", "AUTOLUX SEGURO", "AUTOLUX OKM", "AUTOLUX USADO", "PARTICULAR"]
-CAPACIDAD_DIARIA_GRUPO = 11.5 # 505 paños al mes / 22 días = 23 paños/día taller -> 11.5 por grupo
+
 OBJETIVO_MENSUAL_PANOS = 505.0
+
+# --- LÓGICA DE DÍAS HÁBILES Y FERIADOS ---
+FERIADOS_ARG = [date(datetime.now().year, 3, 24)] # Feriado Día de la Memoria
+
+def dias_habiles_del_mes(anio, mes):
+    _, ult_dia = calendar.monthrange(anio, mes)
+    dias = 0
+    for d in range(1, ult_dia + 1):
+        fecha = date(anio, mes, d)
+        if fecha.weekday() < 5 and fecha not in FERIADOS_ARG:
+            dias += 1
+    return max(1, dias)
+
+DIAS_HABILES_MES = dias_habiles_del_mes(datetime.now().year, datetime.now().month)
+CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES
+CAPACIDAD_DIARIA_GRUPO = CAPACIDAD_DIARIA_TALLER / 2
 
 # --- FUNCIONES DE FECHAS Y PROCESAMIENTO ---
 def parsear_fecha_español(texto):
@@ -67,10 +83,9 @@ def clasificar_abc(panos):
 def obtener_proxima_fecha_libre(dias_carga):
     fecha = datetime.today()
     dias_agregados = 0
-    # Agregamos días saltando los fines de semana
     while dias_agregados < int(dias_carga):
         fecha += timedelta(days=1)
-        if fecha.weekday() < 5: # 0-4 son Lunes a Viernes
+        if fecha.weekday() < 5 and fecha.date() not in FERIADOS_ARG:
             dias_agregados += 1
     return f"{DIAS_SEMANA[fecha.weekday()]} {fecha.strftime('%d/%m')}"
 
@@ -79,9 +94,10 @@ def dias_habiles_restantes_mes():
     _, ult_dia = calendar.monthrange(hoy.year, hoy.month)
     dias_restantes = 0
     for d in range(hoy.day, ult_dia + 1):
-        if date(hoy.year, hoy.month, d).weekday() < 5:
+        fecha = date(hoy.year, hoy.month, d)
+        if fecha.weekday() < 5 and fecha not in FERIADOS_ARG:
             dias_restantes += 1
-    return max(1, dias_restantes) # Para evitar divisiones por cero al final del mes
+    return max(1, dias_restantes) 
 
 @st.cache_data(ttl=300)
 def obtener_turnos():
@@ -199,7 +215,6 @@ tab_turnos, tab_prog, tab_portal, tab_fac, tab_kpi, tab_hist = st.tabs([
 with tab_turnos:
     st.subheader("Recepción de Vehículos")
     
-    # --- ASISTENTE DE ASIGNACIÓN (NUEVO) ---
     if recomendaciones_grupos:
         st.info("**📅 Asistente de Turnos (Disponibilidad Estimada por Grupo):**\n" + 
                 " | ".join([f"**{g}**: libre desde el {f}" for g, f in recomendaciones_grupos.items()]))
@@ -292,8 +307,8 @@ with tab_prog:
 
         df_en_proceso = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO", na=False)]
         
-        st.markdown("### 🚥 Termómetro de Capacidad (Saturación Real)")
-        st.write("Calculado en base a la cantidad de **Paños Activos** dividida por la capacidad teórica de producción de cada grupo (11.5 paños/día).")
+        st.markdown(f"### 🚥 Termómetro de Capacidad (Mes de {DIAS_HABILES_MES} días hábiles)")
+        st.write(f"Calculado en base a los **Paños Activos** divididos por la capacidad teórica de producción ({CAPACIDAD_DIARIA_GRUPO:.1f} paños/día por grupo).")
         
         if not df_en_proceso.empty:
             resumen_capacidad = df_en_proceso.groupby('Grupo').agg(Autos=('Patente', 'count'), Panos_Activos=('Paños', 'sum')).reset_index()
@@ -303,7 +318,7 @@ with tab_prog:
             for i, row in resumen_capacidad.iterrows():
                 with cols_cap[i]:
                     dias_reales = row['Dias_Carga_Real']
-                    fecha_libre = obtener_proxima_fecha_libre(dias_reales) # TRADUCCIÓN A CALENDARIO
+                    fecha_libre = obtener_proxima_fecha_libre(dias_reales)
                     color_dias = "#28a745" if dias_reales < 4 else "#ffc107" if dias_reales < 7 else "#dc3545"
                     st.markdown(f"""
                     <div style='background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'>
@@ -360,6 +375,7 @@ with tab_prog:
             if "DETENIDO" in match: st.error(f"#### {titulo}")
             else: st.markdown(f"#### {titulo}")
             col1, col2 = st.columns(2)
+            
             def dibujar_tabla(col, grupo_nombre, m_key):
                 d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
                 d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
@@ -368,8 +384,16 @@ with tab_prog:
                     if not d_e.empty:
                         d_e = d_e.sort_values(by='Fin', ascending=True)
                         d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-                        st.dataframe(d_e[['Estado_Taller', 'Fase_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']], hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle")
+                        
+                        # CORRECCIÓN DE COLUMNAS PARA TERMINADOS/ENTREGADOS
+                        if m_key in ["TERM PEND", "ENTREGADO"]:
+                            df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
+                        else:
+                            df_vista = d_e[['Estado_Taller', 'Fase_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
+                            
+                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle")
                     else: st.caption(f"Sin vehículos en este estado.")
+                    
             dibujar_tabla(col1, "GRUPO UNO", match)
             dibujar_tabla(col2, "GRUPO DOS", match)
             st.markdown("<br>", unsafe_allow_html=True)
@@ -452,7 +476,6 @@ with tab_fac:
         
         porcentaje_logro = min((panos_est / OBJETIVO_MENSUAL_PANOS) * 100 if OBJETIVO_MENSUAL_PANOS > 0 else 0, 100)
         
-        # --- NUEVA CALCULADORA DE RITMO (PACE) ---
         dias_restantes = dias_habiles_restantes_mes()
         panos_faltantes = max(0, OBJETIVO_MENSUAL_PANOS - panos_est)
         ritmo_diario_necesario = panos_faltantes / dias_restantes if dias_restantes > 0 else 0
