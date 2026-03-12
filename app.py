@@ -149,7 +149,6 @@ def obtener_datos_maestros():
                 if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    
                 d.columns = cols
             else:
-                # Traductor para la pestaña Parabrisas
                 renames = {}
                 for c in d.columns:
                     if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
@@ -179,7 +178,6 @@ def obtener_datos_maestros():
         f_fin_disp = f_fin.date() if f_fin else None
         if not f_fin: f_fin = datetime.now() + timedelta(days=3650)
         
-        # Histórico (Con override si es parabrisas para leer su columna "MES")
         mes_hist = f_fin.strftime('%Y-%m') if f_fin.year < 2030 else "SIN FECHA"
         if row.get('GRUPO_ORIGEN') == 'PARABRISAS':
             mes_str = str(row.get('MES', '')).strip().lower()
@@ -450,7 +448,8 @@ with tab_prog:
 
         st.divider()
 
-        st.markdown("### 📋 Tablero Kanban de Producción (Cadena de Montaje)")
+        # --- NUEVO KANBAN SEPARADO POR GRUPOS ---
+        st.markdown("### 📋 Tablero Kanban de Producción (Separado por Sector)")
         st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
         
         df_kanban = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO|DETENIDO", na=False)].copy()
@@ -461,28 +460,36 @@ with tab_prog:
         
         orden_ideal = ["SIN FASE ASIGNADA", "CHAPA", "PREPARACIÓN", "PINTURA", "ARMADO", "PULIDO", "⛔ DETENIDOS"]
         
-        fases_presentes = list(df_kanban['Fase_Taller'].unique())
-        if "SIN FASE ASIGNADA" not in fases_presentes: fases_presentes.append("SIN FASE ASIGNADA")
-        fases_ordenadas = sorted(fases_presentes, key=lambda x: orden_ideal.index(x) if x in orden_ideal else 99)
+        # Identificamos qué grupos tienen autos en el Kanban
+        grupos_presentes = sorted(list(df_kanban['Grupo'].dropna().unique()))
 
-        cols_kanban = st.columns(len(fases_ordenadas))
-        for idx, fase in enumerate(fases_ordenadas):
-            with cols_kanban[idx]:
-                st.markdown(f"<div class='kanban-col'><h4 style='text-align:center; color:#00235d; font-size: 1rem;'>{fase}</h4></div>", unsafe_allow_html=True)
-                df_fase = df_kanban[df_kanban['Fase_Taller'] == fase]
-                if not df_fase.empty:
-                    for _, row in df_fase.iterrows():
-                        color_tipo = "#28a745" if "A" in row['Tipo_ABC'] else "#ffc107" if "B" in row['Tipo_ABC'] else "#dc3545"
-                        if fase == "⛔ DETENIDOS": color_tipo = "#6c757d"
-                        
-                        st.markdown(f"""
-                        <div style='background: white; padding: 10px; margin-top: 10px; border-radius: 5px; border-left: 5px solid {color_tipo}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);'>
-                            <strong>{row['Patente']}</strong> - {row['Vehiculo'][:15]}<br>
-                            <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} paños | Lead: {row['Dias_Reparacion']} d.</span><br>
-                            <span style='font-size: 0.8em; color: #00235d;'>{row['Tipo_ABC']} - {row['Grupo']}</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else: st.caption("Vacío")
+        for grupo in grupos_presentes:
+            st.markdown(f"<h4 style='color: #00235d; margin-top: 25px; border-bottom: 2px solid #00235d; padding-bottom: 5px;'>🏭 Sector: {grupo}</h4>", unsafe_allow_html=True)
+            df_grupo_kanban = df_kanban[df_kanban['Grupo'] == grupo]
+
+            # Creamos las columnas usando el orden fijo para que todos los grupos queden alineados
+            cols_kanban = st.columns(len(orden_ideal))
+            for idx, fase in enumerate(orden_ideal):
+                with cols_kanban[idx]:
+                    st.markdown(f"<div class='kanban-col' style='padding: 5px;'><h5 style='text-align:center; color:#00235d; margin: 0; font-size: 0.85rem;'>{fase}</h5></div>", unsafe_allow_html=True)
+                    df_fase = df_grupo_kanban[df_grupo_kanban['Fase_Taller'] == fase]
+                    
+                    if not df_fase.empty:
+                        for _, row in df_fase.iterrows():
+                            color_tipo = "#28a745" if "A" in row['Tipo_ABC'] else "#ffc107" if "B" in row['Tipo_ABC'] else "#dc3545"
+                            if fase == "⛔ DETENIDOS": color_tipo = "#6c757d"
+                            
+                            st.markdown(f"""
+                            <div style='background: white; padding: 8px; margin-top: 8px; border-radius: 5px; border-left: 5px solid {color_tipo}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); font-size: 0.9em;'>
+                                <strong>{row['Patente']}</strong><br>
+                                <span style='font-size: 0.85em;'>{row['Vehiculo'][:15]}</span><br>
+                                <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} p. | L: {row['Dias_Reparacion']} d.</span><br>
+                                <span style='font-size: 0.8em; color: #00235d;'>{row['Tipo_ABC']}</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else: 
+                        # Dejamos el espacio vacío para mantener la alineación visual
+                        st.caption("")
 
         st.divider()
         st.markdown("### 📊 Análisis de Carga por Método Toyota (ABC)")
