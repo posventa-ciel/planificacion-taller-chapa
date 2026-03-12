@@ -249,13 +249,21 @@ if 'entregas_confirmadas' not in st.session_state:
 df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v11.copy()
 
-# --- APLICAR BUSCADOR GLOBAL (POR PATENTE O CHASIS) ---
+# --- APLICAR BUSCADOR GLOBAL (CON PARCHE ANTI-CRASH DE MEMORIA) ---
 if busqueda_global:
     termino = busqueda_global.upper().strip()
+    
     if not df.empty:
+        # Aseguramos que la columna exista en la base maestra por las dudas
+        if 'Chasis' not in df.columns: df['Chasis'] = ""
         df = df[(df['Patente'].str.contains(termino, na=False)) | 
                 (df['Chasis'].str.contains(termino, na=False))]
+                
     if not df_turnos_display.empty:
+        # PARCHE: Si la memoria vieja de st.session_state no tiene 'Chasis', la creamos en blanco para que no tire KeyError
+        if 'Chasis' not in df_turnos_display.columns: 
+            df_turnos_display['Chasis'] = ""
+            
         df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
                                               (df_turnos_display['Chasis'].str.contains(termino, na=False))]
 
@@ -489,7 +497,7 @@ with tab_prog:
 
         st.divider()
 
-        # --- 2. TABLAS POR ESTADO (MOVIDAS ARRIBA Y MODIFICADAS PARA EL TÉCNICO) ---
+        # --- 2. TABLAS POR ESTADO ---
         st.markdown("## 📑 Listado de Vehículos en Taller (Prioridad por Fecha Promesa)")
         st.write("Se eliminó el tipo ABC. Columnas actuales: **Dominio, Vehículo y Asesor** para rápida identificación técnica.")
         estados_map = [("⏳ EN PROCESO", "PROCESO"), ("⛔ DETENIDOS", "DETENIDO"), ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), ("🚚 ENTREGADOS", "ENTREGADO")]
@@ -524,7 +532,7 @@ with tab_prog:
         
         st.divider()
 
-        # --- 3. KANBAN (MOVIDO ABAJO) ---
+        # --- 3. KANBAN ---
         st.markdown("### 📋 Tablero Kanban de Producción (Separado por Sector)")
         st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
         
@@ -568,7 +576,7 @@ with tab_prog:
 
         st.divider()
         
-        # --- 4. ABC TOYOTA (MOVIDO AL FINAL) ---
+        # --- 4. ABC TOYOTA ---
         st.markdown("### 📊 Análisis de Carga por Método Toyota (ABC)")
         if not df_en_proceso.empty:
             c_abc1, c_abc2 = st.columns([1, 2])
