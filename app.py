@@ -44,7 +44,7 @@ CLIENTES_LISTA = ["CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "C
 OBJETIVO_MENSUAL_PANOS = 505.0
 
 # --- LÓGICA DE DÍAS HÁBILES Y FERIADOS ---
-FERIADOS_ARG = [date(datetime.now().year, 3, 24)] # Feriado Día de la Memoria
+FERIADOS_ARG = [date(datetime.now().year, 3, 24)] 
 
 def dias_habiles_del_mes(anio, mes):
     _, ult_dia = calendar.monthrange(anio, mes)
@@ -138,7 +138,7 @@ def obtener_datos_maestros():
             if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
             if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        
             if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  
-            if len(cols) > 9: cols[9] = 'HORA_ENTREGA'            # Columna J 
+            if len(cols) > 9: cols[9] = 'HORA_ENTREGA'            
             if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         
             if len(cols) > 7: cols[7] = 'FECHA_TICKET'            
             if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
@@ -194,7 +194,13 @@ def obtener_datos_maestros():
         })
     return pd.DataFrame(filas)
 
-if 'memoria_turnos_v11' not in st.session_state: st.session_state.memoria_turnos_v11 = obtener_turnos()
+# --- VARIABLES DE MEMORIA DE SESIÓN ---
+if 'memoria_turnos_v11' not in st.session_state: 
+    st.session_state.memoria_turnos_v11 = obtener_turnos()
+
+if 'entregas_confirmadas' not in st.session_state:
+    st.session_state.entregas_confirmadas = []
+
 df = obtener_datos_maestros()
 
 # --- CÁLCULO GLOBAL DE CAPACIDAD PARA EL ASISTENTE ---
@@ -294,51 +300,86 @@ with tab_turnos:
                 for idx, row in edited_recibidos.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR']] = row[['Recibido', 'Fotos', 'OR']]
                 st.success("Correcciones aplicadas."); time.sleep(0.5); st.rerun()
 
-    # --- NUEVA SECCIÓN: TURNERO DE ENTREGAS ---
+    # --- SECCIÓN: TURNERO DE ENTREGAS CON CONFIRMACIÓN INTERACTIVA ---
     st.divider()
     st.subheader("🚚 Agenda de Entregas (Vehículos a Salir)")
-    st.write("Basado en la Fecha Promesa del sistema. Ayuda a organizar los horarios en que los clientes vendrán a retirar las unidades.")
+    st.write("Tildá los autos a medida que los clientes se los llevan y tocá guardar. (Se ocultarán de la lista por hoy).")
     
     if not df.empty:
-        df_no_entregados = df[~df['Estado_Taller'].str.contains("ENTREGADO", na=False)]
+        df_no_entregados = df[~df['Estado_Taller'].str.contains("ENTREGADO", na=False)].copy()
+        
+        # Filtramos los que el asesor ya tildó en esta sesión
+        df_no_entregados = df_no_entregados[~df_no_entregados['Patente'].isin(st.session_state.entregas_confirmadas)]
+        
+        # Agregamos la columna boolean para el checkbox
+        df_no_entregados['Entregado_OK'] = False
         
         entregas_hoy = df_no_entregados[df_no_entregados['Fecha_Promesa_Disp'] == hoy].copy()
         entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
         
         col_eh, col_ea = st.columns(2)
         
+        edit_hoy = pd.DataFrame()
+        edit_atra = pd.DataFrame()
+        
         with col_eh:
             st.markdown("#### 🟢 Entregas Programadas para HOY")
             if not entregas_hoy.empty:
                 entregas_hoy = entregas_hoy.sort_values(by='Hora_Entrega')
-                st.dataframe(
-                    entregas_hoy[['Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Grupo', 'Estado_Taller']], 
+                edit_hoy = st.data_editor(
+                    entregas_hoy[['Entregado_OK', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
                     hide_index=True, 
                     use_container_width=True,
                     column_config={
-                        "Hora_Entrega": st.column_config.TextColumn("⌚ Hora"),
-                        "Patente": "Patente", "Vehiculo": "Vehículo", "Asesor": "Asesor", "Grupo": "Grupo", "Estado_Taller": "Estado Actual"
-                    }
+                        "Entregado_OK": st.column_config.CheckboxColumn("✅ Entregado", default=False),
+                        "Hora_Entrega": st.column_config.TextColumn("⌚ Hora", disabled=True),
+                        "Patente": st.column_config.TextColumn("Patente", disabled=True), 
+                        "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
+                        "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
+                        "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
+                    },
+                    key="editor_entregas_hoy"
                 )
             else:
-                st.info("No hay entregas programadas para el día de hoy.")
+                st.info("No hay entregas pendientes para el día de hoy.")
                 
         with col_ea:
             st.markdown("#### 🔴 Entregas Atrasadas (Pendientes)")
             if not entregas_atrasadas.empty:
                 entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp')
                 entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                st.dataframe(
-                    entregas_atrasadas[['Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo', 'Estado_Taller']], 
+                edit_atra = st.data_editor(
+                    entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
                     hide_index=True, 
                     use_container_width=True,
                     column_config={
-                        "Fecha Prom.": st.column_config.TextColumn("📅 Fecha Vencida"),
-                        "Patente": "Patente", "Vehiculo": "Vehículo", "Asesor": "Asesor", "Grupo": "Grupo", "Estado_Taller": "Estado Actual"
-                    }
+                        "Entregado_OK": st.column_config.CheckboxColumn("✅ Entregado", default=False),
+                        "Fecha Prom.": st.column_config.TextColumn("📅 Fecha Vencida", disabled=True),
+                        "Patente": st.column_config.TextColumn("Patente", disabled=True), 
+                        "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
+                        "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
+                        "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
+                    },
+                    key="editor_entregas_atra"
                 )
             else:
                 st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
+                
+        if not edit_hoy.empty or not edit_atra.empty:
+            if st.button("💾 Guardar Entregas Confirmadas", use_container_width=True):
+                nuevas_confirmadas = []
+                if not edit_hoy.empty:
+                    nuevas_confirmadas.extend(edit_hoy[edit_hoy['Entregado_OK'] == True]['Patente'].tolist())
+                if not edit_atra.empty:
+                    nuevas_confirmadas.extend(edit_atra[edit_atra['Entregado_OK'] == True]['Patente'].tolist())
+                
+                if nuevas_confirmadas:
+                    st.session_state.entregas_confirmadas.extend(nuevas_confirmadas)
+                    st.success(f"Se registraron {len(nuevas_confirmadas)} entregas. ¡A seguir facturando!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.warning("No marcaste ningún vehículo como entregado.")
 
 # ==========================================
 # PESTAÑA 2: PROGRAMACIÓN Y KANBAN
