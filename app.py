@@ -6,11 +6,14 @@ import calendar
 import re
 import time
 
-# --- CONFIGURACIÓN DE PÁGINA (Debe ser la primera línea de Streamlit) ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión Taller CENOA - Jujuy", layout="wide", initial_sidebar_state="expanded")
 
 # --- ESTILOS CSS INYECTADOS ---
 st.markdown("""<style>
+    /* Achicar la barra lateral */
+    [data-testid="stSidebar"] { min-width: 220px !important; max-width: 220px !important; }
+    
     .metric-card { background-color: white; border: 1px solid #dee2e6; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 110px; margin-bottom: 15px;}
     .metric-title { color: #666; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; text-transform: uppercase; }
     .metric-value-money { color: #00235d; font-size: 1.8rem; font-weight: bold; margin: 0; }
@@ -25,14 +28,14 @@ st.markdown("""<style>
 # --- BARRA LATERAL (SIDEBAR) Y BUSCADOR ---
 with st.sidebar:
     st.markdown("### 🔍 Buscador Global")
-    busqueda_global = st.text_input("Patente o Vehículo", placeholder="Ej: AB123CD")
-    st.caption("Filtra la información en todas las pestañas simultáneamente.")
+    busqueda_global = st.text_input("Dominio o Chasis", placeholder="Ej: AB123CD")
+    st.caption("Filtra por patente o chasis en todas las pestañas.")
     st.divider()
     st.markdown("### ⚙️ Sistema")
     if st.button("🔄 Forzar Actualización", use_container_width=True):
         st.cache_data.clear()
         st.success("¡Datos actualizados!"); time.sleep(0.5); st.rerun()
-    st.caption("Los datos se extraen de Google Sheets.")
+    st.caption("Datos extraídos de Google Sheets.")
 
 # --- ENCABEZADO ---
 st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
@@ -108,22 +111,26 @@ def dias_habiles_restantes_mes():
 
 @st.cache_data(ttl=300)
 def obtener_turnos():
-    columnas_base = ['Tipo', 'Fecha', 'Hora', 'Vehiculo', 'Patente', 'Asesor', 'Precio', 'Paños', 'Observaciones', 'Tiempo_Entrega', 'Cliente', 'Seguro', 'Recibido', 'Fotos', 'Cancelado', 'OR', 'Eliminar']
+    columnas_base = ['Tipo', 'Fecha', 'Hora', 'Vehiculo', 'Patente', 'Chasis', 'Asesor', 'Precio', 'Paños', 'Observaciones', 'Tiempo_Entrega', 'Cliente', 'Seguro', 'Recibido', 'Fotos', 'Cancelado', 'OR', 'Eliminar']
     if GID_TURNOS == "PONER_AQUI_GID_TURNOS": return pd.DataFrame(columns=columnas_base)
     try:
         d = pd.read_csv(f"{URL_BASE}{GID_TURNOS}", dtype=str)
         d.columns = d.columns.str.strip().str.upper()
         if 'PATENTE' in d.columns: d = d.dropna(subset=['PATENTE']); d = d[d['PATENTE'].str.strip() != ""]
         filas = []
+        col_chasis = next((c for c in d.columns if 'CHASIS' in c or 'VIN' in c), None)
+        
         for _, row in d.iterrows():
             col_fecha = next((c for c in d.columns if 'FECH' in c), None)
             fecha_turno = parsear_fecha_español(row.get(col_fecha, '')) or datetime.now()
             asesor_raw = str(row.get('ASESOR', 'SIN ASIGNAR')).strip().upper()
             if asesor_raw not in ASESORES_LISTA: asesor_raw = "SIN ASIGNAR"
             col_tiempo = next((c for c in d.columns if 'TIEMPO' in c), None)
+            
             filas.append({
                 'Tipo': '📅 PROGRAMADO', 'Fecha': fecha_turno.date(), 'Hora': str(row.get('HORAS', '')).strip(),
                 'Vehiculo': str(row.get('VEHICULO', '')).upper(), 'Patente': str(row.get('PATENTE', '')).upper(),
+                'Chasis': str(row.get(col_chasis, '')).strip().upper() if col_chasis else "",
                 'Asesor': asesor_raw, 'Precio': str(row.get('PRECIO', '')).strip(), 'Paños': str(row.get('PAÑOS', '')).strip(),
                 'Observaciones': str(row.get('OBSERVACIONES', '')).strip(), 'Tiempo_Entrega': str(row.get(col_tiempo, '')) if col_tiempo else "",
                 'Cliente': str(row.get('CLIENTE', '')).upper(), 'Seguro': str(row.get('SEGURO', '')).upper(),
@@ -179,6 +186,8 @@ def obtener_datos_maestros():
     df_raw = pd.concat(dfs, ignore_index=True)
     filas = []
     
+    col_chasis_global = next((c for c in df_raw.columns if 'CHASIS' in c or 'VIN' in c), None)
+    
     for _, row in df_raw.iterrows():
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         f_fin_disp = f_fin.date() if f_fin else None
@@ -216,10 +225,11 @@ def obtener_datos_maestros():
         fase = str(row.get('FASE_TALLER', '')).replace('nan', '').strip().upper()
         if not fase or fase == 'VACIA_20': fase = "SIN FASE ASIGNADA"
         hora_entrega = str(row.get('HORA_ENTREGA', '')).replace('nan', '').strip()
+        chasis_val = str(row.get(col_chasis_global, '')).strip().upper() if col_chasis_global else ""
 
         filas.append({
             'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': asesor, 'Cliente': cliente,
-            'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')),
+            'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')), 'Chasis': chasis_val,
             'Inicio': f_fin - timedelta(days=max(1, int(panos))), 'Fin': f_fin, 'Fecha_Promesa_Disp': f_fin_disp, 
             'Fecha_Ingreso': f_ingreso.date() if f_ingreso else None, 'Fecha_Ticket': f_ticket.date() if f_ticket else None,
             'Hora_Entrega': hora_entrega,
@@ -239,18 +249,15 @@ if 'entregas_confirmadas' not in st.session_state:
 df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v11.copy()
 
-# --- APLICAR BUSCADOR GLOBAL ---
+# --- APLICAR BUSCADOR GLOBAL (POR PATENTE O CHASIS) ---
 if busqueda_global:
     termino = busqueda_global.upper().strip()
-    # Filtramos la base maestra (df)
     if not df.empty:
         df = df[(df['Patente'].str.contains(termino, na=False)) | 
-                (df['Vehiculo'].str.contains(termino, na=False)) | 
-                (df['Observaciones'].str.contains(termino, na=False))]
-    # Filtramos la vista de turnos
+                (df['Chasis'].str.contains(termino, na=False))]
     if not df_turnos_display.empty:
         df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
-                                              (df_turnos_display['Vehiculo'].str.contains(termino, na=False))]
+                                              (df_turnos_display['Chasis'].str.contains(termino, na=False))]
 
 # --- CÁLCULO GLOBAL DE CAPACIDAD ---
 recomendaciones_grupos = {}
@@ -275,9 +282,7 @@ with tab_turnos:
         st.info("**📅 Asistente de Turnos (Disponibilidad Estimada por Grupo):**\n" + 
                 " | ".join([f"**{g}**: libre desde el {f}" for g, f in recomendaciones_grupos.items()]))
     
-    # ----------------------------------------------------
-    # CAJA 1: INGRESOS Y RECEPCIÓN
-    # ----------------------------------------------------
+    # --- CAJA 1: INGRESOS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #00235d; margin-top: 0;'>📥 1. INGRESOS: Recepción de Vehículos</h2>", unsafe_allow_html=True)
         st.write("Administración de turnos y vehículos que **entran** al taller.")
@@ -304,7 +309,7 @@ with tab_turnos:
                     st.caption("* Campos obligatorios para identificar el auto.")
                     if st.form_submit_button("Agregar al Turnero"):
                         if nueva_patente and nuevo_vehiculo:
-                            nuevo_ingreso = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(), 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
+                            nuevo_ingreso = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
                             st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
                             st.success(f"Ingreso sin turno agregado con éxito."); time.sleep(0.5); st.rerun()
                         else: st.error("Por favor completa la Patente y el Vehículo.")
@@ -321,6 +326,8 @@ with tab_turnos:
             df_cancelados = df_rango[df_rango['Cancelado'] == True]
             df_activos = df_rango[df_rango['Cancelado'] == False]
             mascara_recibidos = (df_activos['OR'].str.strip() != "") & (df_activos['Recibido'] == True) & (df_activos['Fotos'] == True)
+            
+            # Ordenados por fecha de turno
             df_pendientes = df_activos[~mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
             df_recibidos = df_activos[mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
 
@@ -357,9 +364,7 @@ with tab_turnos:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ----------------------------------------------------
-    # CAJA 2: SALIDAS Y ENTREGAS
-    # ----------------------------------------------------
+    # --- CAJA 2: SALIDAS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #1e7e34; margin-top: 0;'>📤 2. SALIDAS: Agenda de Entregas</h2>", unsafe_allow_html=True)
         st.write("Vehículos listos para entregar al cliente. Tildá la casilla verde a medida que se los llevan.")
@@ -400,7 +405,8 @@ with tab_turnos:
             with col_ea:
                 st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
                 if not entregas_atrasadas.empty:
-                    entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp')
+                    # ORDENADO POR FECHA PROMESA
+                    entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
                     entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
                     edit_atra = st.data_editor(
                         entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
@@ -449,6 +455,7 @@ with tab_prog:
 
         df_en_proceso = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO", na=False)]
         
+        # --- 1. TERMÓMETRO ---
         st.markdown(f"### 🚥 Termómetro de Capacidad (Mes de {DIAS_HABILES_MES} días hábiles)")
         st.write(f"Calculado en base a los **Paños Activos** divididos por la capacidad teórica de producción ({CAPACIDAD_DIARIA_GRUPO:.1f} paños/día por grupo). No incluye vehículos detenidos.")
         
@@ -482,6 +489,42 @@ with tab_prog:
 
         st.divider()
 
+        # --- 2. TABLAS POR ESTADO (MOVIDAS ARRIBA Y MODIFICADAS PARA EL TÉCNICO) ---
+        st.markdown("## 📑 Listado de Vehículos en Taller (Prioridad por Fecha Promesa)")
+        st.write("Se eliminó el tipo ABC. Columnas actuales: **Dominio, Vehículo y Asesor** para rápida identificación técnica.")
+        estados_map = [("⏳ EN PROCESO", "PROCESO"), ("⛔ DETENIDOS", "DETENIDO"), ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), ("🚚 ENTREGADOS", "ENTREGADO")]
+        
+        for titulo, match in estados_map:
+            if "DETENIDO" in match: st.error(f"#### {titulo}")
+            else: st.markdown(f"#### {titulo}")
+            col1, col2 = st.columns(2)
+            
+            def dibujar_tabla(col, grupo_nombre, m_key):
+                d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
+                d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
+                with col:
+                    st.caption(f"**{grupo_nombre}**")
+                    if not d_e.empty:
+                        # ORDENADO POR FECHA PROMESA (Fin = Fecha_Promesa_Disp)
+                        d_e = d_e.sort_values(by='Fin', ascending=True, na_position='last')
+                        d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+                        
+                        # NUEVAS COLUMNAS (Sin Tipo ABC, con Vehiculo y Asesor)
+                        if m_key in ["TERM PEND", "ENTREGADO"]:
+                            df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Paños']]
+                        else:
+                            df_vista = d_e[['Estado_Taller', 'Fase_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Paños']]
+                            
+                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle")
+                    else: st.caption(f"Sin vehículos en este estado.")
+                    
+            dibujar_tabla(col1, "GRUPO UNO", match)
+            dibujar_tabla(col2, "GRUPO DOS", match)
+            st.markdown("<br>", unsafe_allow_html=True)
+        
+        st.divider()
+
+        # --- 3. KANBAN (MOVIDO ABAJO) ---
         st.markdown("### 📋 Tablero Kanban de Producción (Separado por Sector)")
         st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
         
@@ -524,6 +567,8 @@ with tab_prog:
                         st.caption("")
 
         st.divider()
+        
+        # --- 4. ABC TOYOTA (MOVIDO AL FINAL) ---
         st.markdown("### 📊 Análisis de Carga por Método Toyota (ABC)")
         if not df_en_proceso.empty:
             c_abc1, c_abc2 = st.columns([1, 2])
@@ -533,35 +578,6 @@ with tab_prog:
             with c_abc2:
                 fig_abc = px.pie(resumen_abc, values='Cant. Vehículos', names='Tipo_ABC', hole=0.4, title="Vehículos EN PROCESO por Clasificación ABC", color_discrete_sequence=['#28a745', '#ffc107', '#dc3545'])
                 st.plotly_chart(fig_abc, use_container_width=True)
-
-        st.divider()
-        st.markdown("## 📑 Listado Completo de Vehículos (Por Estado)")
-        estados_map = [("⏳ EN PROCESO", "PROCESO"), ("⛔ DETENIDOS", "DETENIDO"), ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), ("🚚 ENTREGADOS", "ENTREGADO")]
-        for titulo, match in estados_map:
-            if "DETENIDO" in match: st.error(f"#### {titulo}")
-            else: st.markdown(f"#### {titulo}")
-            col1, col2 = st.columns(2)
-            
-            def dibujar_tabla(col, grupo_nombre, m_key):
-                d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
-                d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
-                with col:
-                    st.caption(f"**{grupo_nombre}**")
-                    if not d_e.empty:
-                        d_e = d_e.sort_values(by='Fin', ascending=True)
-                        d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
-                        
-                        if m_key in ["TERM PEND", "ENTREGADO"]:
-                            df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
-                        else:
-                            df_vista = d_e[['Estado_Taller', 'Fase_Taller', 'Fecha Prom.', 'Patente', 'Tipo_ABC', 'Paños']]
-                            
-                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle")
-                    else: st.caption(f"Sin vehículos en este estado.")
-                    
-            dibujar_tabla(col1, "GRUPO UNO", match)
-            dibujar_tabla(col2, "GRUPO DOS", match)
-            st.markdown("<br>", unsafe_allow_html=True)
 
 # ==========================================
 # PESTAÑA 3: PORTAL EMPRESAS 
@@ -577,6 +593,9 @@ with tab_portal:
             if empresa_filtro == "AUTOSOL": df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('SOL', case=False, na=False)]
             elif empresa_filtro == "AUTOLUX": df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('LUX', case=False, na=False)]
             elif empresa_filtro == "CIEL / AUTOCIEL": df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('CIEL', case=False, na=False)]
+            
+            # ORDENADO POR FECHA PROMESA
+            df_vista_emp = df_vista_emp.sort_values(by='Fecha_Promesa_Disp', ascending=True, na_position='last')
             
             en_proceso = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("PROCESO", na=False)])
             detenidos = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("DETENIDO", na=False)])
@@ -612,7 +631,7 @@ with tab_portal:
             df_pendientes = df_vista_emp[~mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
             df_entregados = df_vista_emp[mask_entregados][vista_columnas].rename(columns={'Estado_Taller': 'Estado Actual'})
             
-            st.write("#### ⏳ Vehículos en Taller (Pendientes de Entrega)")
+            st.write("#### ⏳ Vehículos en Taller (Prioridad por Fecha Promesa)")
             st.data_editor(df_pendientes, hide_index=True, use_container_width=True, column_config={"Cliente": st.column_config.TextColumn("Cliente", disabled=True), "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), "Patente": st.column_config.TextColumn("Patente", disabled=True), "Fecha Ingreso": st.column_config.TextColumn("Ingreso Taller", disabled=True), "Fecha Ticket": st.column_config.TextColumn("1ra Fecha Prom.", disabled=True), "Estado Actual": st.column_config.TextColumn("Estado Actual", disabled=True), "Fecha Entrega": st.column_config.TextColumn("Fecha Entrega", disabled=True), "Asesor": st.column_config.TextColumn("Asesor Taller", disabled=True), "Fecha Ingreso Concesionario": st.column_config.DateColumn("🗓️ Ingreso Conces.", format="DD/MM/YYYY"), "Asesor Concesionario": st.column_config.TextColumn("👤 Asesor Conces."), "Observaciones": st.column_config.TextColumn("📝 Observaciones (Doble Clic)", width="large", max_chars=1000)}, key="editor_observaciones_pendientes")
             st.write("#### 🚚 Vehículos Entregados (Historial Reciente)")
             st.dataframe(df_entregados, hide_index=True, use_container_width=True, column_config={"Observaciones": st.column_config.TextColumn("Observaciones", width="large")})
