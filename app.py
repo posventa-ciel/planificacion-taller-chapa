@@ -133,7 +133,6 @@ def obtener_datos_maestros():
             d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
             d.columns = d.columns.str.strip().str.upper()
             
-            # --- LÓGICA INTELIGENTE PARA PARABRISAS (Columnas diferentes) ---
             if n != "PARABRISAS":
                 cols = list(d.columns)
                 while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
@@ -426,8 +425,13 @@ with tab_prog:
             resumen_capacidad = df_en_proceso.groupby('Grupo').agg(Autos=('Patente', 'count'), Panos_Activos=('Paños', 'sum')).reset_index()
             resumen_capacidad['Dias_Carga_Real'] = resumen_capacidad['Panos_Activos'] / CAPACIDAD_DIARIA_GRUPO
             
+            # Ordenamos el termómetro de capacidad también con la lógica maestro
+            orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
+            resumen_capacidad['Orden'] = resumen_capacidad['Grupo'].apply(lambda x: orden_grupos_maestro.index(x) if x in orden_grupos_maestro else 99)
+            resumen_capacidad = resumen_capacidad.sort_values('Orden').drop(columns=['Orden'])
+            
             cols_cap = st.columns(len(resumen_capacidad))
-            for i, row in resumen_capacidad.iterrows():
+            for i, row in resumen_capacidad.reset_index(drop=True).iterrows():
                 with cols_cap[i]:
                     dias_reales = row['Dias_Carga_Real']
                     fecha_libre = obtener_proxima_fecha_libre(dias_reales)
@@ -448,7 +452,7 @@ with tab_prog:
 
         st.divider()
 
-        # --- NUEVO KANBAN SEPARADO POR GRUPOS ---
+        # --- KANBAN SEPARADO Y ORDENADO POR SECTOR ---
         st.markdown("### 📋 Tablero Kanban de Producción (Separado por Sector)")
         st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
         
@@ -460,8 +464,10 @@ with tab_prog:
         
         orden_ideal = ["SIN FASE ASIGNADA", "CHAPA", "PREPARACIÓN", "PINTURA", "ARMADO", "PULIDO", "⛔ DETENIDOS"]
         
-        # Identificamos qué grupos tienen autos en el Kanban
-        grupos_presentes = sorted(list(df_kanban['Grupo'].dropna().unique()))
+        # Identificamos qué grupos tienen autos y LOS ORDENAMOS LOGICAMENTE (no alfabeticamente)
+        grupos_presentes_raw = list(df_kanban['Grupo'].dropna().unique())
+        orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
+        grupos_presentes = sorted(grupos_presentes_raw, key=lambda x: orden_grupos_maestro.index(x) if x in orden_grupos_maestro else 99)
 
         for grupo in grupos_presentes:
             st.markdown(f"<h4 style='color: #00235d; margin-top: 25px; border-bottom: 2px solid #00235d; padding-bottom: 5px;'>🏭 Sector: {grupo}</h4>", unsafe_allow_html=True)
@@ -488,7 +494,6 @@ with tab_prog:
                             </div>
                             """, unsafe_allow_html=True)
                     else: 
-                        # Dejamos el espacio vacío para mantener la alineación visual
                         st.caption("")
 
         st.divider()
@@ -656,7 +661,11 @@ with tab_fac:
             df_res['💰 SI'] = pivot[('Precio', 'Aprobado (SI)')]
             df_res['💰 EST. CIERRE (FAC+SI)'] = df_res['💰 FAC'] + df_res['💰 SI']
             df_res['💰 OTROS (En Taller)'] = pivot[('Precio', 'En Taller (Otros)')]
-            return df_res.sort_values(by='📦 EST. CIERRE (FAC+SI)', ascending=False)
+            
+            orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
+            df_res['Orden'] = df_res.index.map(lambda x: orden_grupos_maestro.index(x) if x in orden_grupos_maestro else 99)
+            df_res = df_res.sort_values(by=['Orden', '📦 EST. CIERRE (FAC+SI)'], ascending=[True, False]).drop(columns=['Orden'])
+            return df_res
 
         colores_grafico = {'Facturado': '#28a745', 'Aprobado (SI)': '#adb5bd', 'Proyección al Cierre': '#00A8E8'}
         tab_grupos, tab_asesores, tab_empresas = st.tabs(["👥 Producción por Grupo", "👔 Producción por Asesor", "🏢 Estimado Cierre por Empresa"])
@@ -694,7 +703,24 @@ with tab_fac:
 
         with tab_asesores:
             df_asesores_limpio = df_analisis[df_analisis['Asesor'] != 'SIN ASIGNAR'].copy()
-            tabla_asesor = crear_tabla_resumen(df_asesores_limpio, 'Asesor')
+            
+            def crear_tabla_resumen_asesor(df_origen, columna_indice):
+                pivot = df_origen.pivot_table(index=columna_indice, columns='Estado_Resumen', values=['Paños', 'Precio'], aggfunc='sum', fill_value=0)
+                for est in ['Facturado (FAC)', 'Aprobado (SI)', 'En Taller (Otros)']:
+                    if ('Paños', est) not in pivot.columns: pivot[('Paños', est)] = 0
+                    if ('Precio', est) not in pivot.columns: pivot[('Precio', est)] = 0
+                df_res = pd.DataFrame(index=pivot.index)
+                df_res['📦 FAC'] = pivot[('Paños', 'Facturado (FAC)')]
+                df_res['📦 SI'] = pivot[('Paños', 'Aprobado (SI)')]
+                df_res['📦 EST. CIERRE (FAC+SI)'] = df_res['📦 FAC'] + df_res['📦 SI']
+                df_res['📦 OTROS (En Taller)'] = pivot[('Paños', 'En Taller (Otros)')]
+                df_res['💰 FAC'] = pivot[('Precio', 'Facturado (FAC)')]
+                df_res['💰 SI'] = pivot[('Precio', 'Aprobado (SI)')]
+                df_res['💰 EST. CIERRE (FAC+SI)'] = df_res['💰 FAC'] + df_res['💰 SI']
+                df_res['💰 OTROS (En Taller)'] = pivot[('Precio', 'En Taller (Otros)')]
+                return df_res.sort_values(by='📦 EST. CIERRE (FAC+SI)', ascending=False)
+                
+            tabla_asesor = crear_tabla_resumen_asesor(df_asesores_limpio, 'Asesor')
             df_a_panos_chart = tabla_asesor.reset_index()[['Asesor', '📦 FAC', '📦 SI', '📦 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Paños')
             df_a_panos_chart['Métrica'] = df_a_panos_chart['Métrica'].replace({'📦 FAC': 'Facturado', '📦 SI': 'Aprobado (SI)', '📦 EST. CIERRE (FAC+SI)': 'Proyección al Cierre'})
             df_a_pesos_chart = tabla_asesor.reset_index()[['Asesor', '💰 FAC', '💰 SI', '💰 EST. CIERRE (FAC+SI)']].melt(id_vars='Asesor', var_name='Métrica', value_name='Precio')
@@ -727,7 +753,24 @@ with tab_fac:
         with tab_empresas:
             col_e1, col_e2 = st.columns([1.5, 1])
             with col_e1:
-                tabla_empresa = crear_tabla_resumen(df_analisis, 'Cliente')
+                
+                def crear_tabla_resumen_emp(df_origen, columna_indice):
+                    pivot = df_origen.pivot_table(index=columna_indice, columns='Estado_Resumen', values=['Paños', 'Precio'], aggfunc='sum', fill_value=0)
+                    for est in ['Facturado (FAC)', 'Aprobado (SI)', 'En Taller (Otros)']:
+                        if ('Paños', est) not in pivot.columns: pivot[('Paños', est)] = 0
+                        if ('Precio', est) not in pivot.columns: pivot[('Precio', est)] = 0
+                    df_res = pd.DataFrame(index=pivot.index)
+                    df_res['📦 FAC'] = pivot[('Paños', 'Facturado (FAC)')]
+                    df_res['📦 SI'] = pivot[('Paños', 'Aprobado (SI)')]
+                    df_res['📦 EST. CIERRE (FAC+SI)'] = df_res['📦 FAC'] + df_res['📦 SI']
+                    df_res['📦 OTROS (En Taller)'] = pivot[('Paños', 'En Taller (Otros)')]
+                    df_res['💰 FAC'] = pivot[('Precio', 'Facturado (FAC)')]
+                    df_res['💰 SI'] = pivot[('Precio', 'Aprobado (SI)')]
+                    df_res['💰 EST. CIERRE (FAC+SI)'] = df_res['💰 FAC'] + df_res['💰 SI']
+                    df_res['💰 OTROS (En Taller)'] = pivot[('Precio', 'En Taller (Otros)')]
+                    return df_res.sort_values(by='📦 EST. CIERRE (FAC+SI)', ascending=False)
+                    
+                tabla_empresa = crear_tabla_resumen_emp(df_analisis, 'Cliente')
                 st.dataframe(tabla_empresa.style.format({
                     '📦 FAC': '{:.1f}', '📦 SI': '{:.1f}', '📦 EST. CIERRE (FAC+SI)': '{:.1f}', '📦 OTROS (En Taller)': '{:.1f}',
                     '💰 FAC': '${:,.0f}', '💰 SI': '${:,.0f}', '💰 EST. CIERRE (FAC+SI)': '${:,.0f}', '💰 OTROS (En Taller)': '${:,.0f}'
