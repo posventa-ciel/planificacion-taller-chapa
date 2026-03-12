@@ -131,30 +131,61 @@ def obtener_datos_maestros():
     for n, gid in GIDS.items():
         try:
             d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
-            cols = list(d.columns)
-            while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
-            if len(cols) > 21: cols[21] = 'ESTADO_FAC'            
-            if len(cols) > 20: cols[20] = 'FASE_TALLER'           
-            if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
-            if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        
-            if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  
-            if len(cols) > 9: cols[9] = 'HORA_ENTREGA'            
-            if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         
-            if len(cols) > 7: cols[7] = 'FECHA_TICKET'            
-            if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
-            if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    
-            d.columns = cols
             d.columns = d.columns.str.strip().str.upper()
-            if 'PATENTE' in d.columns: d = d.dropna(subset=['PATENTE']); d = d[d['PATENTE'].str.strip() != ""]; d['GRUPO_ORIGEN'] = n; dfs.append(d)
+            
+            # --- LÓGICA INTELIGENTE PARA PARABRISAS (Columnas diferentes) ---
+            if n != "PARABRISAS":
+                cols = list(d.columns)
+                while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
+                if len(cols) > 21: cols[21] = 'ESTADO_FAC'            
+                if len(cols) > 20: cols[20] = 'FASE_TALLER'           
+                if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
+                if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        
+                if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  
+                if len(cols) > 9: cols[9] = 'HORA_ENTREGA'            
+                if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         
+                if len(cols) > 7: cols[7] = 'FECHA_TICKET'            
+                if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
+                if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    
+                d.columns = cols
+            else:
+                # Traductor para la pestaña Parabrisas
+                renames = {}
+                for c in d.columns:
+                    if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
+                    elif 'ESTADO TALLER' in c or 'ESTADOTALLER' in c: renames[c] = 'ESTADO_TALLER'
+                    elif 'FASE' in c: renames[c] = 'FASE_TALLER'
+                    elif 'COMPAÑIA' in c or 'SEGURO' in c or 'EMPRESA' in c: renames[c] = 'EMPRESA_TALLER'
+                    elif 'OBSERVACION' in c: renames[c] = 'OBSERVACIONES_TALLER'
+                    elif 'PROMESA' in c: renames[c] = 'FECHA_PROMESA_I'
+                    elif 'TICKET' in c: renames[c] = 'FECHA_TICKET'
+                    elif 'INGRESO' in c: renames[c] = 'FECHA_INGRESO_TALLER'
+                    elif 'HORA' in c: renames[c] = 'HORA_ENTREGA'
+                d = d.rename(columns=renames)
+
+            if 'PATENTE' in d.columns: 
+                d = d.dropna(subset=['PATENTE'])
+                d = d[d['PATENTE'].str.strip() != ""]
+                d['GRUPO_ORIGEN'] = n
+                dfs.append(d)
         except: pass
+        
     if not dfs: return pd.DataFrame()
     df_raw = pd.concat(dfs, ignore_index=True)
     filas = []
+    
     for _, row in df_raw.iterrows():
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         f_fin_disp = f_fin.date() if f_fin else None
         if not f_fin: f_fin = datetime.now() + timedelta(days=3650)
+        
+        # Histórico (Con override si es parabrisas para leer su columna "MES")
         mes_hist = f_fin.strftime('%Y-%m') if f_fin.year < 2030 else "SIN FECHA"
+        if row.get('GRUPO_ORIGEN') == 'PARABRISAS':
+            mes_str = str(row.get('MES', '')).strip().lower()
+            if mes_str in MESES_ES:
+                mes_hist = f"{datetime.now().year}-{MESES_ES[mes_str]:02d}"
+
         f_ingreso = parsear_fecha_español(row.get('FECHA_INGRESO_TALLER', ''))
         f_ticket = parsear_fecha_español(row.get('FECHA_TICKET', ''))
         
@@ -307,18 +338,13 @@ with tab_turnos:
     
     if not df.empty:
         df_no_entregados = df[~df['Estado_Taller'].str.contains("ENTREGADO", na=False)].copy()
-        
-        # Filtramos los que el asesor ya tildó en esta sesión
         df_no_entregados = df_no_entregados[~df_no_entregados['Patente'].isin(st.session_state.entregas_confirmadas)]
-        
-        # Agregamos la columna boolean para el checkbox
         df_no_entregados['Entregado_OK'] = False
         
         entregas_hoy = df_no_entregados[df_no_entregados['Fecha_Promesa_Disp'] == hoy].copy()
         entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
         
         col_eh, col_ea = st.columns(2)
-        
         edit_hoy = pd.DataFrame()
         edit_atra = pd.DataFrame()
         
@@ -368,10 +394,8 @@ with tab_turnos:
         if not edit_hoy.empty or not edit_atra.empty:
             if st.button("💾 Guardar Entregas Confirmadas", use_container_width=True):
                 nuevas_confirmadas = []
-                if not edit_hoy.empty:
-                    nuevas_confirmadas.extend(edit_hoy[edit_hoy['Entregado_OK'] == True]['Patente'].tolist())
-                if not edit_atra.empty:
-                    nuevas_confirmadas.extend(edit_atra[edit_atra['Entregado_OK'] == True]['Patente'].tolist())
+                if not edit_hoy.empty: nuevas_confirmadas.extend(edit_hoy[edit_hoy['Entregado_OK'] == True]['Patente'].tolist())
+                if not edit_atra.empty: nuevas_confirmadas.extend(edit_atra[edit_atra['Entregado_OK'] == True]['Patente'].tolist())
                 
                 if nuevas_confirmadas:
                     st.session_state.entregas_confirmadas.extend(nuevas_confirmadas)
