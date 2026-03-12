@@ -6,7 +6,8 @@ import calendar
 import re
 import time
 
-st.set_page_config(page_title="Gestión Taller CENOA - Jujuy", layout="wide")
+# --- CONFIGURACIÓN DE PÁGINA (Debe ser la primera línea de Streamlit) ---
+st.set_page_config(page_title="Gestión Taller CENOA - Jujuy", layout="wide", initial_sidebar_state="expanded")
 
 # --- ESTILOS CSS INYECTADOS ---
 st.markdown("""<style>
@@ -21,16 +22,22 @@ st.markdown("""<style>
     .kanban-col { background-color: #f8f9fa; border-radius: 8px; padding: 10px; border: 1px solid #e9ecef; }
 </style>""", unsafe_allow_html=True)
 
-# --- ENCABEZADO Y BOTÓN DE ACTUALIZACIÓN ---
-col_tit, col_btn = st.columns([3, 1])
-with col_tit: st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
-with col_btn:
-    st.write("") 
+# --- BARRA LATERAL (SIDEBAR) Y BUSCADOR ---
+with st.sidebar:
+    st.markdown("### 🔍 Buscador Global")
+    busqueda_global = st.text_input("Patente o Vehículo", placeholder="Ej: AB123CD")
+    st.caption("Filtra la información en todas las pestañas simultáneamente.")
+    st.divider()
+    st.markdown("### ⚙️ Sistema")
     if st.button("🔄 Forzar Actualización", use_container_width=True):
         st.cache_data.clear()
         st.success("¡Datos actualizados!"); time.sleep(0.5); st.rerun()
+    st.caption("Los datos se extraen de Google Sheets.")
 
-# --- CONFIGURACIÓN ---
+# --- ENCABEZADO ---
+st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
+
+# --- CONFIGURACIÓN DE GIDS Y VARIABLES ---
 ID_NUEVO_SHEET = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
 URL_BASE = f"https://docs.google.com/spreadsheets/d/{ID_NUEVO_SHEET}/export?format=csv&gid="
 GID_TURNOS = "109364752" 
@@ -43,7 +50,7 @@ CLIENTES_LISTA = ["CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "C
 
 OBJETIVO_MENSUAL_PANOS = 505.0
 
-# --- LÓGICA DE DÍAS HÁBILES Y FERIADOS ---
+# --- LÓGICA DE DÍAS HÁBILES ---
 FERIADOS_ARG = [date(datetime.now().year, 3, 24)] 
 
 def dias_habiles_del_mes(anio, mes):
@@ -59,7 +66,7 @@ DIAS_HABILES_MES = dias_habiles_del_mes(datetime.now().year, datetime.now().mont
 CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES
 CAPACIDAD_DIARIA_GRUPO = CAPACIDAD_DIARIA_TALLER / 2
 
-# --- FUNCIONES DE FECHAS Y PROCESAMIENTO ---
+# --- FUNCIONES ---
 def parsear_fecha_español(texto):
     if pd.isna(texto) or str(texto).strip() == "": return None 
     texto = str(texto).lower().strip()
@@ -222,7 +229,7 @@ def obtener_datos_maestros():
         })
     return pd.DataFrame(filas)
 
-# --- VARIABLES DE MEMORIA DE SESIÓN ---
+# --- MEMORIA Y CARGA DE DATOS ---
 if 'memoria_turnos_v11' not in st.session_state: 
     st.session_state.memoria_turnos_v11 = obtener_turnos()
 
@@ -230,8 +237,22 @@ if 'entregas_confirmadas' not in st.session_state:
     st.session_state.entregas_confirmadas = []
 
 df = obtener_datos_maestros()
+df_turnos_display = st.session_state.memoria_turnos_v11.copy()
 
-# --- CÁLCULO GLOBAL DE CAPACIDAD PARA EL ASISTENTE ---
+# --- APLICAR BUSCADOR GLOBAL ---
+if busqueda_global:
+    termino = busqueda_global.upper().strip()
+    # Filtramos la base maestra (df)
+    if not df.empty:
+        df = df[(df['Patente'].str.contains(termino, na=False)) | 
+                (df['Vehiculo'].str.contains(termino, na=False)) | 
+                (df['Observaciones'].str.contains(termino, na=False))]
+    # Filtramos la vista de turnos
+    if not df_turnos_display.empty:
+        df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
+                                              (df_turnos_display['Vehiculo'].str.contains(termino, na=False))]
+
+# --- CÁLCULO GLOBAL DE CAPACIDAD ---
 recomendaciones_grupos = {}
 if not df.empty:
     df_en_proceso_global = df[df['Estado_Taller'].str.contains("PROCESO", na=False)]
@@ -243,164 +264,174 @@ if not df.empty:
             recomendaciones_grupos[row['Grupo']] = fecha_recomendada
 
 tab_turnos, tab_prog, tab_portal, tab_fac, tab_kpi, tab_hist = st.tabs([
-    "📋 Turnero Diario", "🛠️ Programación y Kanban", "🏢 PORTAL EMPRESAS", "💰 Facturación y Objetivos", "📊 KPIs", "📅 Históricos"
+    "📋 Turnero y Entregas", "🛠️ Kanban de Taller", "🏢 Seguimiento Empresas", "💰 Facturación", "📊 KPIs", "📅 Históricos"
 ])
 
 # ==========================================
-# PESTAÑA 1: TURNERO DIARIO 
+# PESTAÑA 1: TURNERO Y ENTREGAS (Cajas Separadas)
 # ==========================================
 with tab_turnos:
-    st.subheader("Recepción de Vehículos")
-    
-    if recomendaciones_grupos:
+    if recomendaciones_grupos and not busqueda_global:
         st.info("**📅 Asistente de Turnos (Disponibilidad Estimada por Grupo):**\n" + 
                 " | ".join([f"**{g}**: libre desde el {f}" for g, f in recomendaciones_grupos.items()]))
     
-    col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
-    with col_fecha:
-        hoy = datetime.today().date()
-        fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=(hoy, hoy), format="DD/MM/YYYY")
-        if isinstance(fechas_seleccionadas, tuple):
-            f_inicio = f_fin = fechas_seleccionadas[0] if len(fechas_seleccionadas) < 2 else fechas_seleccionadas[0]
-            if len(fechas_seleccionadas) == 2: f_fin = fechas_seleccionadas[1]
-        else: f_inicio = f_fin = fechas_seleccionadas
-    with col_asesor: asesor_filtro = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA)
-    with col_add:
-        with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
-            with st.form("form_sin_turno", clear_on_submit=True):
-                c_pat, c_veh, c_cli = st.columns(3)
-                nueva_patente, nuevo_vehiculo, nuevo_cliente = c_pat.text_input("Patente *"), c_veh.text_input("Vehículo *"), c_cli.selectbox("Cliente", CLIENTES_LISTA)
-                c_seg, c_pre, c_pan = st.columns(3)
-                nuevo_seguro, nuevo_precio, nuevo_panos = c_seg.text_input("Seguro"), c_pre.text_input("Precio ($)"), c_pan.text_input("Paños (Ej: 1.5)")
-                c_tie, c_obs, c_ase = st.columns(3)
-                nuevo_tiempo, nueva_obs = c_tie.text_input("Tiempo Entrega (Días)"), c_obs.text_input("Observaciones")
-                nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0)
-                st.caption("* Campos obligatorios para identificar el auto.")
-                if st.form_submit_button("Agregar al Turnero"):
-                    if nueva_patente and nuevo_vehiculo:
-                        nuevo_ingreso = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(), 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
-                        st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
-                        st.success(f"Ingreso sin turno agregado con éxito."); time.sleep(0.5); st.rerun()
-                    else: st.error("Por favor completa la Patente y el Vehículo.")
-
-    st.divider()
-    mask = (st.session_state.memoria_turnos_v11['Fecha'] >= f_inicio) & (st.session_state.memoria_turnos_v11['Fecha'] <= f_fin)
-    df_rango = st.session_state.memoria_turnos_v11[mask].copy()
-    if asesor_filtro != "TODOS": df_rango = df_rango[df_rango['Asesor'] == asesor_filtro]
-
-    if df_rango.empty: st.info("No hay turnos para los filtros seleccionados.")
-    else:
-        df_rango['OR'] = df_rango['OR'].fillna("")
-        df_cancelados = df_rango[df_rango['Cancelado'] == True]
-        df_activos = df_rango[df_rango['Cancelado'] == False]
-        mascara_recibidos = (df_activos['OR'].str.strip() != "") & (df_activos['Recibido'] == True) & (df_activos['Fotos'] == True)
-        df_pendientes = df_activos[~mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
-        df_recibidos = df_activos[mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
-
-        st.write("### ⏱️ Turnos Pendientes")
-        if not df_pendientes.empty:
-            df_prog = df_pendientes[df_pendientes['Tipo'] == '📅 PROGRAMADO']
-            df_sin = df_pendientes[df_pendientes['Tipo'] == '🚶‍♂️ SIN TURNO']
-            edited_prog, edited_sin = pd.DataFrame(), pd.DataFrame()
-            if not df_prog.empty:
-                st.write("#### 📅 Programados")
-                edited_prog = st.data_editor(df_prog[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False)}, hide_index=True, use_container_width=True, key="editor_prog")
-            if not df_sin.empty:
-                st.write("#### 🚶‍♂️ Ingresos Adicionales (Sin Turno)")
-                edited_sin = st.data_editor(df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False), "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)}, hide_index=True, use_container_width=True, key="editor_sin")
-
-            if st.button("💾 Guardar Cambios en Pendientes"):
-                indices_a_borrar = []
-                if not edited_prog.empty:
-                    for idx, row in edited_prog.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
-                if not edited_sin.empty:
-                    for idx, row in edited_sin.iterrows():
-                        if row.get('Eliminar', False): indices_a_borrar.append(idx)
-                        else: st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
-                if indices_a_borrar: st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
-                st.success("Actualizado."); time.sleep(0.5); st.rerun() 
+    # ----------------------------------------------------
+    # CAJA 1: INGRESOS Y RECEPCIÓN
+    # ----------------------------------------------------
+    with st.container(border=True):
+        st.markdown("<h2 style='color: #00235d; margin-top: 0;'>📥 1. INGRESOS: Recepción de Vehículos</h2>", unsafe_allow_html=True)
+        st.write("Administración de turnos y vehículos que **entran** al taller.")
+        
+        col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
+        with col_fecha:
+            hoy = datetime.today().date()
+            fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=(hoy, hoy), format="DD/MM/YYYY")
+            if isinstance(fechas_seleccionadas, tuple):
+                f_inicio = f_fin = fechas_seleccionadas[0] if len(fechas_seleccionadas) < 2 else fechas_seleccionadas[0]
+                if len(fechas_seleccionadas) == 2: f_fin = fechas_seleccionadas[1]
+            else: f_inicio = f_fin = fechas_seleccionadas
+        with col_asesor: asesor_filtro = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA)
+        with col_add:
+            with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
+                with st.form("form_sin_turno", clear_on_submit=True):
+                    c_pat, c_veh, c_cli = st.columns(3)
+                    nueva_patente, nuevo_vehiculo, nuevo_cliente = c_pat.text_input("Patente *"), c_veh.text_input("Vehículo *"), c_cli.selectbox("Cliente", CLIENTES_LISTA)
+                    c_seg, c_pre, c_pan = st.columns(3)
+                    nuevo_seguro, nuevo_precio, nuevo_panos = c_seg.text_input("Seguro"), c_pre.text_input("Precio ($)"), c_pan.text_input("Paños (Ej: 1.5)")
+                    c_tie, c_obs, c_ase = st.columns(3)
+                    nuevo_tiempo, nueva_obs = c_tie.text_input("Tiempo Entrega (Días)"), c_obs.text_input("Observaciones")
+                    nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0)
+                    st.caption("* Campos obligatorios para identificar el auto.")
+                    if st.form_submit_button("Agregar al Turnero"):
+                        if nueva_patente and nuevo_vehiculo:
+                            nuevo_ingreso = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(), 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
+                            st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
+                            st.success(f"Ingreso sin turno agregado con éxito."); time.sleep(0.5); st.rerun()
+                        else: st.error("Por favor completa la Patente y el Vehículo.")
 
         st.divider()
-        st.write("### 🏁 Turnos Recibidos (Con OR Abierta)")
-        if not df_recibidos.empty:
-            edited_recibidos = st.data_editor(df_recibidos[['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Recibido', 'Fotos', 'OR']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY", disabled=True), "Recibido": st.column_config.CheckboxColumn("✅ Recibido"), "Fotos": st.column_config.CheckboxColumn("📸 Fotos"), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10)}, hide_index=True, use_container_width=True, key="editor_recibidos")
-            if st.button("💾 Guardar Correcciones"):
-                for idx, row in edited_recibidos.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR']] = row[['Recibido', 'Fotos', 'OR']]
-                st.success("Correcciones aplicadas."); time.sleep(0.5); st.rerun()
+        mask = (df_turnos_display['Fecha'] >= f_inicio) & (df_turnos_display['Fecha'] <= f_fin)
+        df_rango = df_turnos_display[mask].copy()
+        if asesor_filtro != "TODOS": df_rango = df_rango[df_rango['Asesor'] == asesor_filtro]
 
-    # --- SECCIÓN: TURNERO DE ENTREGAS CON CONFIRMACIÓN INTERACTIVA ---
-    st.divider()
-    st.subheader("🚚 Agenda de Entregas (Vehículos a Salir)")
-    st.write("Tildá los autos a medida que los clientes se los llevan y tocá guardar. (Se ocultarán de la lista por hoy).")
-    
-    if not df.empty:
-        df_no_entregados = df[~df['Estado_Taller'].str.contains("ENTREGADO", na=False)].copy()
-        df_no_entregados = df_no_entregados[~df_no_entregados['Patente'].isin(st.session_state.entregas_confirmadas)]
-        df_no_entregados['Entregado_OK'] = False
-        
-        entregas_hoy = df_no_entregados[df_no_entregados['Fecha_Promesa_Disp'] == hoy].copy()
-        entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
-        
-        col_eh, col_ea = st.columns(2)
-        edit_hoy = pd.DataFrame()
-        edit_atra = pd.DataFrame()
-        
-        with col_eh:
-            st.markdown("#### 🟢 Entregas Programadas para HOY")
-            if not entregas_hoy.empty:
-                entregas_hoy = entregas_hoy.sort_values(by='Hora_Entrega')
-                edit_hoy = st.data_editor(
-                    entregas_hoy[['Entregado_OK', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
-                    hide_index=True, 
-                    use_container_width=True,
-                    column_config={
-                        "Entregado_OK": st.column_config.CheckboxColumn("✅ Entregado", default=False),
-                        "Hora_Entrega": st.column_config.TextColumn("⌚ Hora", disabled=True),
-                        "Patente": st.column_config.TextColumn("Patente", disabled=True), 
-                        "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
-                        "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
-                        "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
-                    },
-                    key="editor_entregas_hoy"
-                )
-            else:
-                st.info("No hay entregas pendientes para el día de hoy.")
+        if df_rango.empty: 
+            st.info("No hay turnos para los filtros seleccionados o la búsqueda actual.")
+        else:
+            df_rango['OR'] = df_rango['OR'].fillna("")
+            df_cancelados = df_rango[df_rango['Cancelado'] == True]
+            df_activos = df_rango[df_rango['Cancelado'] == False]
+            mascara_recibidos = (df_activos['OR'].str.strip() != "") & (df_activos['Recibido'] == True) & (df_activos['Fotos'] == True)
+            df_pendientes = df_activos[~mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
+            df_recibidos = df_activos[mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
+
+            st.write("#### ⏱️ Turnos Pendientes de Recepción")
+            if not df_pendientes.empty:
+                df_prog = df_pendientes[df_pendientes['Tipo'] == '📅 PROGRAMADO']
+                df_sin = df_pendientes[df_pendientes['Tipo'] == '🚶‍♂️ SIN TURNO']
+                edited_prog, edited_sin = pd.DataFrame(), pd.DataFrame()
                 
-        with col_ea:
-            st.markdown("#### 🔴 Entregas Atrasadas (Pendientes)")
-            if not entregas_atrasadas.empty:
-                entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp')
-                entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                edit_atra = st.data_editor(
-                    entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
-                    hide_index=True, 
-                    use_container_width=True,
-                    column_config={
-                        "Entregado_OK": st.column_config.CheckboxColumn("✅ Entregado", default=False),
-                        "Fecha Prom.": st.column_config.TextColumn("📅 Fecha Vencida", disabled=True),
-                        "Patente": st.column_config.TextColumn("Patente", disabled=True), 
-                        "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
-                        "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
-                        "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
-                    },
-                    key="editor_entregas_atra"
-                )
-            else:
-                st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
-                
-        if not edit_hoy.empty or not edit_atra.empty:
-            if st.button("💾 Guardar Entregas Confirmadas", use_container_width=True):
-                nuevas_confirmadas = []
-                if not edit_hoy.empty: nuevas_confirmadas.extend(edit_hoy[edit_hoy['Entregado_OK'] == True]['Patente'].tolist())
-                if not edit_atra.empty: nuevas_confirmadas.extend(edit_atra[edit_atra['Entregado_OK'] == True]['Patente'].tolist())
-                
-                if nuevas_confirmadas:
-                    st.session_state.entregas_confirmadas.extend(nuevas_confirmadas)
-                    st.success(f"Se registraron {len(nuevas_confirmadas)} entregas. ¡A seguir facturando!")
-                    time.sleep(1)
-                    st.rerun()
+                if not df_prog.empty:
+                    st.caption("📅 Programados")
+                    edited_prog = st.data_editor(df_prog[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False)}, hide_index=True, use_container_width=True, key="editor_prog")
+                if not df_sin.empty:
+                    st.caption("🚶‍♂️ Ingresos Adicionales (Sin Turno)")
+                    edited_sin = st.data_editor(df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False), "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)}, hide_index=True, use_container_width=True, key="editor_sin")
+
+                if st.button("💾 Guardar Ingresos"):
+                    indices_a_borrar = []
+                    if not edited_prog.empty:
+                        for idx, row in edited_prog.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                    if not edited_sin.empty:
+                        for idx, row in edited_sin.iterrows():
+                            if row.get('Eliminar', False): indices_a_borrar.append(idx)
+                            else: st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                    if indices_a_borrar: st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
+                    st.success("Actualizado."); time.sleep(0.5); st.rerun() 
+
+            st.write("#### 🏁 Turnos Completados (Ya tienen OR)")
+            if not df_recibidos.empty:
+                edited_recibidos = st.data_editor(df_recibidos[['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Recibido', 'Fotos', 'OR']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY", disabled=True), "Recibido": st.column_config.CheckboxColumn("✅ Recibido"), "Fotos": st.column_config.CheckboxColumn("📸 Fotos"), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10)}, hide_index=True, use_container_width=True, key="editor_recibidos")
+                if st.button("💾 Guardar Correcciones (Completados)"):
+                    for idx, row in edited_recibidos.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR']] = row[['Recibido', 'Fotos', 'OR']]
+                    st.success("Correcciones aplicadas."); time.sleep(0.5); st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ----------------------------------------------------
+    # CAJA 2: SALIDAS Y ENTREGAS
+    # ----------------------------------------------------
+    with st.container(border=True):
+        st.markdown("<h2 style='color: #1e7e34; margin-top: 0;'>📤 2. SALIDAS: Agenda de Entregas</h2>", unsafe_allow_html=True)
+        st.write("Vehículos listos para entregar al cliente. Tildá la casilla verde a medida que se los llevan.")
+        
+        if not df.empty:
+            df_no_entregados = df[~df['Estado_Taller'].str.contains("ENTREGADO", na=False)].copy()
+            df_no_entregados = df_no_entregados[~df_no_entregados['Patente'].isin(st.session_state.entregas_confirmadas)]
+            df_no_entregados['Entregado_OK'] = False
+            
+            entregas_hoy = df_no_entregados[df_no_entregados['Fecha_Promesa_Disp'] == hoy].copy()
+            entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
+            
+            col_eh, col_ea = st.columns(2)
+            edit_hoy = pd.DataFrame()
+            edit_atra = pd.DataFrame()
+            
+            with col_eh:
+                st.markdown("#### 🟢 Entregas Programadas para HOY")
+                if not entregas_hoy.empty:
+                    entregas_hoy = entregas_hoy.sort_values(by='Hora_Entrega')
+                    edit_hoy = st.data_editor(
+                        entregas_hoy[['Entregado_OK', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
+                        hide_index=True, 
+                        use_container_width=True,
+                        column_config={
+                            "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
+                            "Hora_Entrega": st.column_config.TextColumn("⌚ Hora", disabled=True),
+                            "Patente": st.column_config.TextColumn("Patente", disabled=True), 
+                            "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
+                            "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
+                            "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
+                        },
+                        key="editor_entregas_hoy"
+                    )
                 else:
-                    st.warning("No marcaste ningún vehículo como entregado.")
+                    st.info("No hay entregas pendientes para el día de hoy.")
+                    
+            with col_ea:
+                st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
+                if not entregas_atrasadas.empty:
+                    entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp')
+                    entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                    edit_atra = st.data_editor(
+                        entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
+                        hide_index=True, 
+                        use_container_width=True,
+                        column_config={
+                            "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
+                            "Fecha Prom.": st.column_config.TextColumn("📅 Venció", disabled=True),
+                            "Patente": st.column_config.TextColumn("Patente", disabled=True), 
+                            "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
+                            "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
+                            "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
+                        },
+                        key="editor_entregas_atra"
+                    )
+                else:
+                    st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
+                    
+            if not edit_hoy.empty or not edit_atra.empty:
+                if st.button("💾 Confirmar Salida de Vehículos Seleccionados", use_container_width=True):
+                    nuevas_confirmadas = []
+                    if not edit_hoy.empty: nuevas_confirmadas.extend(edit_hoy[edit_hoy['Entregado_OK'] == True]['Patente'].tolist())
+                    if not edit_atra.empty: nuevas_confirmadas.extend(edit_atra[edit_atra['Entregado_OK'] == True]['Patente'].tolist())
+                    
+                    if nuevas_confirmadas:
+                        st.session_state.entregas_confirmadas.extend(nuevas_confirmadas)
+                        st.success(f"Se registraron {len(nuevas_confirmadas)} entregas. ¡A seguir facturando!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.warning("No marcaste ningún vehículo como entregado.")
 
 # ==========================================
 # PESTAÑA 2: PROGRAMACIÓN Y KANBAN
@@ -425,7 +456,6 @@ with tab_prog:
             resumen_capacidad = df_en_proceso.groupby('Grupo').agg(Autos=('Patente', 'count'), Panos_Activos=('Paños', 'sum')).reset_index()
             resumen_capacidad['Dias_Carga_Real'] = resumen_capacidad['Panos_Activos'] / CAPACIDAD_DIARIA_GRUPO
             
-            # Ordenamos el termómetro de capacidad también con la lógica maestro
             orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
             resumen_capacidad['Orden'] = resumen_capacidad['Grupo'].apply(lambda x: orden_grupos_maestro.index(x) if x in orden_grupos_maestro else 99)
             resumen_capacidad = resumen_capacidad.sort_values('Orden').drop(columns=['Orden'])
@@ -452,7 +482,6 @@ with tab_prog:
 
         st.divider()
 
-        # --- KANBAN SEPARADO Y ORDENADO POR SECTOR ---
         st.markdown("### 📋 Tablero Kanban de Producción (Separado por Sector)")
         st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
         
@@ -464,7 +493,6 @@ with tab_prog:
         
         orden_ideal = ["SIN FASE ASIGNADA", "CHAPA", "PREPARACIÓN", "PINTURA", "ARMADO", "PULIDO", "⛔ DETENIDOS"]
         
-        # Identificamos qué grupos tienen autos y LOS ORDENAMOS LOGICAMENTE (no alfabeticamente)
         grupos_presentes_raw = list(df_kanban['Grupo'].dropna().unique())
         orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
         grupos_presentes = sorted(grupos_presentes_raw, key=lambda x: orden_grupos_maestro.index(x) if x in orden_grupos_maestro else 99)
@@ -473,7 +501,6 @@ with tab_prog:
             st.markdown(f"<h4 style='color: #00235d; margin-top: 25px; border-bottom: 2px solid #00235d; padding-bottom: 5px;'>🏭 Sector: {grupo}</h4>", unsafe_allow_html=True)
             df_grupo_kanban = df_kanban[df_kanban['Grupo'] == grupo]
 
-            # Creamos las columnas usando el orden fijo para que todos los grupos queden alineados
             cols_kanban = st.columns(len(orden_ideal))
             for idx, fase in enumerate(orden_ideal):
                 with cols_kanban[idx]:
