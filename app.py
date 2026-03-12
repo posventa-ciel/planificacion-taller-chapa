@@ -12,7 +12,7 @@ st.set_page_config(page_title="Gestión Taller CENOA - Jujuy", layout="wide", in
 # --- ESTILOS CSS INYECTADOS ---
 st.markdown("""<style>
     /* Achicar la barra lateral */
-    [data-testid="stSidebar"] { min-width: 220px !important; max-width: 220px !important; }
+    [data-testid="stSidebar"] { min-width: 240px !important; max-width: 240px !important; }
     
     .metric-card { background-color: white; border: 1px solid #dee2e6; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 110px; margin-bottom: 15px;}
     .metric-title { color: #666; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; text-transform: uppercase; }
@@ -27,15 +27,10 @@ st.markdown("""<style>
 
 # --- BARRA LATERAL (SIDEBAR) Y BUSCADOR ---
 with st.sidebar:
-    st.markdown("### 🔍 Buscador Global")
+    st.markdown("### 🔍 Buscador Rápido")
     busqueda_global = st.text_input("Dominio o Chasis", placeholder="Ej: AB123CD")
-    st.caption("Filtra por patente o chasis en todas las pestañas.")
+    st.caption("Filtra tablas y muestra un resumen.")
     st.divider()
-    st.markdown("### ⚙️ Sistema")
-    if st.button("🔄 Forzar Actualización", use_container_width=True):
-        st.cache_data.clear()
-        st.success("¡Datos actualizados!"); time.sleep(0.5); st.rerun()
-    st.caption("Datos extraídos de Google Sheets.")
 
 # --- ENCABEZADO ---
 st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
@@ -249,23 +244,71 @@ if 'entregas_confirmadas' not in st.session_state:
 df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v11.copy()
 
-# --- APLICAR BUSCADOR GLOBAL (CON PARCHE ANTI-CRASH DE MEMORIA) ---
+# --- APLICAR BUSCADOR GLOBAL (CON RESUMEN EN LA BARRA LATERAL) ---
 if busqueda_global:
     termino = busqueda_global.upper().strip()
     
+    # 1. Filtrar Taller
     if not df.empty:
-        # Aseguramos que la columna exista en la base maestra por las dudas
         if 'Chasis' not in df.columns: df['Chasis'] = ""
         df = df[(df['Patente'].str.contains(termino, na=False)) | 
                 (df['Chasis'].str.contains(termino, na=False))]
                 
+    # 2. Filtrar Turnos
     if not df_turnos_display.empty:
-        # PARCHE: Si la memoria vieja de st.session_state no tiene 'Chasis', la creamos en blanco para que no tire KeyError
-        if 'Chasis' not in df_turnos_display.columns: 
-            df_turnos_display['Chasis'] = ""
-            
+        if 'Chasis' not in df_turnos_display.columns: df_turnos_display['Chasis'] = ""
         df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
                                               (df_turnos_display['Chasis'].str.contains(termino, na=False))]
+    
+    # 3. Dibujar el resumen en la barra lateral
+    with st.sidebar:
+        st.markdown("### 📋 Resumen del Vehículo")
+        
+        if not df.empty:
+            for _, row in df.head(5).iterrows(): # Mostramos hasta 5 coincidencias
+                f_prom = row.get('Fecha_Promesa_Disp')
+                fecha_str = f_prom.strftime('%d/%m/%Y') if pd.notna(f_prom) else "Sin Fecha"
+                estado_taller = str(row.get('Estado_Taller', ''))
+                
+                # Definir color del borde según el estado
+                if "ENTREGADO" in estado_taller: color_borde = "#28a745" # Verde
+                elif "PROCESO" in estado_taller: color_borde = "#ffc107" # Amarillo
+                elif "DETENIDO" in estado_taller: color_borde = "#dc3545" # Rojo
+                elif "TERM" in estado_taller: color_borde = "#17a2b8" # Celeste
+                else: color_borde = "#6c757d" # Gris
+                
+                st.markdown(f"""
+                <div style='background-color: white; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; border-left: 6px solid {color_borde}; margin-bottom: 10px; font-size: 0.85em; box-shadow: 0 1px 2px rgba(0,0,0,0.05);'>
+                    <div style='font-size: 1.1em; font-weight: bold; color: #00235d; margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px;'>🚗 {row['Patente']} - {str(row['Vehiculo'])[:12]}</div>
+                    <strong>🏷️ Estado:</strong> {estado_taller}<br>
+                    <strong>🏭 Grupo:</strong> {row['Grupo']}<br>
+                    <strong>👔 Asesor:</strong> {row['Asesor']}<br>
+                    <strong>📅 Entrega:</strong> <span style='color: #d32f2f; font-weight: bold;'>{fecha_str}</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+        elif not df_turnos_display.empty:
+            for _, row in df_turnos_display.head(3).iterrows():
+                fecha_turno = row['Fecha'].strftime('%d/%m/%Y') if pd.notna(row['Fecha']) else "Sin Fecha"
+                st.markdown(f"""
+                <div style='background-color: white; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; border-left: 6px solid #6f42c1; margin-bottom: 10px; font-size: 0.85em; box-shadow: 0 1px 2px rgba(0,0,0,0.05);'>
+                    <div style='font-size: 1.1em; font-weight: bold; color: #00235d; margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 3px;'>📝 TURNO: {row['Patente']}</div>
+                    <strong>🏷️ Tipo:</strong> {row['Tipo']}<br>
+                    <strong>📅 Día Asignado:</strong> {fecha_turno}<br>
+                    <strong>👔 Asesor:</strong> {row['Asesor']}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("No se encontró el vehículo en el taller ni en los turnos.")
+
+# --- BOTÓN DE ACTUALIZACIÓN EN LA BARRA LATERAL ---
+with st.sidebar:
+    st.divider()
+    st.markdown("### ⚙️ Sistema")
+    if st.button("🔄 Forzar Actualización", use_container_width=True):
+        st.cache_data.clear()
+        st.success("¡Datos actualizados!"); time.sleep(0.5); st.rerun()
+    st.caption("Datos extraídos de Google Sheets.")
 
 # --- CÁLCULO GLOBAL DE CAPACIDAD ---
 recomendaciones_grupos = {}
@@ -335,7 +378,6 @@ with tab_turnos:
             df_activos = df_rango[df_rango['Cancelado'] == False]
             mascara_recibidos = (df_activos['OR'].str.strip() != "") & (df_activos['Recibido'] == True) & (df_activos['Fotos'] == True)
             
-            # Ordenados por fecha de turno
             df_pendientes = df_activos[~mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
             df_recibidos = df_activos[mascara_recibidos].sort_values(['Fecha', 'Hora', 'Asesor'])
 
@@ -413,7 +455,6 @@ with tab_turnos:
             with col_ea:
                 st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
                 if not entregas_atrasadas.empty:
-                    # ORDENADO POR FECHA PROMESA
                     entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
                     entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
                     edit_atra = st.data_editor(
@@ -513,11 +554,9 @@ with tab_prog:
                 with col:
                     st.caption(f"**{grupo_nombre}**")
                     if not d_e.empty:
-                        # ORDENADO POR FECHA PROMESA (Fin = Fecha_Promesa_Disp)
                         d_e = d_e.sort_values(by='Fin', ascending=True, na_position='last')
                         d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
                         
-                        # NUEVAS COLUMNAS (Sin Tipo ABC, con Vehiculo y Asesor)
                         if m_key in ["TERM PEND", "ENTREGADO"]:
                             df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Paños']]
                         else:
@@ -602,7 +641,6 @@ with tab_portal:
             elif empresa_filtro == "AUTOLUX": df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('LUX', case=False, na=False)]
             elif empresa_filtro == "CIEL / AUTOCIEL": df_vista_emp = df_vista_emp[df_vista_emp['Cliente'].str.contains('CIEL', case=False, na=False)]
             
-            # ORDENADO POR FECHA PROMESA
             df_vista_emp = df_vista_emp.sort_values(by='Fecha_Promesa_Disp', ascending=True, na_position='last')
             
             en_proceso = len(df_vista_emp[df_vista_emp['Estado_Taller'].str.contains("PROCESO", na=False)])
