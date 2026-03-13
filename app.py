@@ -428,27 +428,37 @@ with tab_turnos:
             entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
             
             col_eh, col_ea = st.columns(2)
-            edit_hoy = pd.DataFrame()
+            edit_hoy_df = pd.DataFrame() # Para juntar todas las mini-tablas de hoy
             edit_atra = pd.DataFrame()
             
             with col_eh:
                 st.markdown("#### 🟢 Entregas Programadas para HOY")
                 if not entregas_hoy.empty:
-                    entregas_hoy = entregas_hoy.sort_values(by='Hora_Entrega')
-                    edit_hoy = st.data_editor(
-                        entregas_hoy[['Entregado_OK', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
-                        hide_index=True, 
-                        use_container_width=True,
-                        column_config={
-                            "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
-                            "Hora_Entrega": st.column_config.TextColumn("⌚ Hora", disabled=True),
-                            "Patente": st.column_config.TextColumn("Patente", disabled=True), 
-                            "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
-                            "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
-                            "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
-                        },
-                        key="editor_entregas_hoy"
-                    )
+                    # Separar por Grupo (usando el orden maestro)
+                    orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
+                    grupos_hoy_unicos = [g for g in orden_grupos_maestro if g in entregas_hoy['Grupo'].unique()]
+                    otros_grupos = [g for g in entregas_hoy['Grupo'].unique() if pd.notna(g) and g not in orden_grupos_maestro]
+                    grupos_hoy_unicos.extend(otros_grupos)
+                    
+                    for grupo_val in grupos_hoy_unicos:
+                        st.caption(f"📍 **{grupo_val}**")
+                        df_g_hoy = entregas_hoy[entregas_hoy['Grupo'] == grupo_val].sort_values(by='Hora_Entrega')
+                        
+                        # Creamos el editor SIN la columna Grupo para que quede más limpio
+                        edit_g = st.data_editor(
+                            df_g_hoy[['Entregado_OK', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor']], 
+                            hide_index=True, 
+                            use_container_width=True,
+                            column_config={
+                                "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
+                                "Hora_Entrega": st.column_config.TextColumn("⌚ Hora", disabled=True),
+                                "Patente": st.column_config.TextColumn("Patente", disabled=True), 
+                                "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
+                                "Asesor": st.column_config.TextColumn("Asesor", disabled=True)
+                            },
+                            key=f"editor_entregas_hoy_{grupo_val.replace(' ', '_')}"
+                        )
+                        edit_hoy_df = pd.concat([edit_hoy_df, edit_g])
                 else:
                     st.info("No hay entregas pendientes para el día de hoy.")
                     
@@ -474,10 +484,10 @@ with tab_turnos:
                 else:
                     st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
                     
-            if not edit_hoy.empty or not edit_atra.empty:
+            if not edit_hoy_df.empty or not edit_atra.empty:
                 if st.button("💾 Confirmar Salida de Vehículos Seleccionados", use_container_width=True):
                     nuevas_confirmadas = []
-                    if not edit_hoy.empty: nuevas_confirmadas.extend(edit_hoy[edit_hoy['Entregado_OK'] == True]['Patente'].tolist())
+                    if not edit_hoy_df.empty: nuevas_confirmadas.extend(edit_hoy_df[edit_hoy_df['Entregado_OK'] == True]['Patente'].tolist())
                     if not edit_atra.empty: nuevas_confirmadas.extend(edit_atra[edit_atra['Entregado_OK'] == True]['Patente'].tolist())
                     
                     if nuevas_confirmadas:
@@ -573,7 +583,7 @@ with tab_prog:
 
         # --- 3. KANBAN ---
         st.markdown("### 📋 Tablero Kanban de Producción (Separado por Sector)")
-        st.write("Los vehículos fluyen de izquierda a derecha. Los autos detenidos se agrupan en su propia columna de 'Estacionamiento'.")
+        st.write("Los vehículos fluyen de izquierda a derecha. **Prioridad por colores:** 🟢 Con tiempo | 🟡 Entrega HOY | 🔴 Atrasado | ⚪ Detenido.")
         
         df_kanban = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO|DETENIDO", na=False)].copy()
         df_kanban.loc[df_kanban['Estado_Taller'].str.contains("DETENIDO", na=False), 'Fase_Taller'] = "⛔ DETENIDOS"
@@ -587,6 +597,8 @@ with tab_prog:
         orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
         grupos_presentes = sorted(grupos_presentes_raw, key=lambda x: orden_grupos_maestro.index(x) if x in orden_grupos_maestro else 99)
 
+        hoy_kanban = datetime.today().date()
+
         for grupo in grupos_presentes:
             st.markdown(f"<h4 style='color: #00235d; margin-top: 25px; border-bottom: 2px solid #00235d; padding-bottom: 5px;'>🏭 Sector: {grupo}</h4>", unsafe_allow_html=True)
             df_grupo_kanban = df_kanban[df_kanban['Grupo'] == grupo]
@@ -599,15 +611,41 @@ with tab_prog:
                     
                     if not df_fase.empty:
                         for _, row in df_fase.iterrows():
-                            color_tipo = "#28a745" if "A" in row['Tipo_ABC'] else "#ffc107" if "B" in row['Tipo_ABC'] else "#dc3545"
-                            if fase == "⛔ DETENIDOS": color_tipo = "#6c757d"
+                            # Lógica de colores basada en FECHA PROMESA
+                            f_prom = row.get('Fecha_Promesa_Disp')
+                            
+                            if fase == "⛔ DETENIDOS":
+                                color_borde = "#6c757d" # Gris
+                                circulo = "⚪"
+                                texto_fecha = "Detenido"
+                            else:
+                                if pd.isna(f_prom) or not f_prom:
+                                    color_borde = "#17a2b8" # Celeste
+                                    circulo = "🔵"
+                                    texto_fecha = "Sin fecha"
+                                elif f_prom < hoy_kanban:
+                                    color_borde = "#dc3545" # Rojo (Atrasado)
+                                    circulo = "🔴"
+                                    texto_fecha = f_prom.strftime('%d/%m')
+                                elif f_prom == hoy_kanban:
+                                    color_borde = "#ffc107" # Amarillo (Hoy)
+                                    circulo = "🟡"
+                                    texto_fecha = f_prom.strftime('%d/%m')
+                                else:
+                                    color_borde = "#28a745" # Verde (A tiempo)
+                                    circulo = "🟢"
+                                    texto_fecha = f_prom.strftime('%d/%m')
+                                    
+                            asesor_corto = row['Asesor'].split()[0] if row['Asesor'] else "N/A"
                             
                             st.markdown(f"""
-                            <div style='background: white; padding: 8px; margin-top: 8px; border-radius: 5px; border-left: 5px solid {color_tipo}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); font-size: 0.9em;'>
-                                <strong>{row['Patente']}</strong><br>
+                            <div style='background: white; padding: 8px; margin-top: 8px; border-radius: 5px; border-left: 5px solid {color_borde}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); font-size: 0.9em;'>
+                                <div style='display: flex; justify-content: space-between; align-items: center;'>
+                                    <strong>{row['Patente']}</strong>
+                                    <span title='Fecha Promesa' style='font-size: 0.9em; font-weight: bold;'>{circulo} {texto_fecha}</span>
+                                </div>
                                 <span style='font-size: 0.85em;'>{row['Vehiculo'][:15]}</span><br>
-                                <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} p. | L: {row['Dias_Reparacion']} d.</span><br>
-                                <span style='font-size: 0.8em; color: #00235d;'>{row['Tipo_ABC']}</span>
+                                <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} p. | Asesor: {asesor_corto}</span><br>
                             </div>
                             """, unsafe_allow_html=True)
                     else: 
