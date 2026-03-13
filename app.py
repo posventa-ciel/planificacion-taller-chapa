@@ -436,26 +436,54 @@ with tab_turnos:
                 entregas_rango = entregas_rango[entregas_rango['Asesor'] == asesor_filtro]
                 entregas_atrasadas = entregas_atrasadas[entregas_atrasadas['Asesor'] == asesor_filtro]
             
-            col_eh, col_ea = st.columns(2)
             edit_rango_df = pd.DataFrame() 
             edit_atra = pd.DataFrame()
             
-            with col_eh:
-                if f_inicio == f_fin:
-                    titulo_rango = f"HOY ({f_inicio.strftime('%d/%m')})" if f_inicio == hoy else f"para el {f_inicio.strftime('%d/%m')}"
-                else:
-                    titulo_rango = f"del {f_inicio.strftime('%d/%m')} al {f_fin.strftime('%d/%m')}"
-                    
-                st.markdown(f"#### 🟢 Entregas Programadas {titulo_rango}")
-                if not entregas_rango.empty:
-                    entregas_rango['Fecha Prom.'] = entregas_rango['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
-                    
-                    orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
-                    grupos_rango_unicos = [g for g in orden_grupos_maestro if g in entregas_rango['Grupo'].unique()]
-                    otros_grupos = [g for g in entregas_rango['Grupo'].unique() if pd.notna(g) and g not in orden_grupos_maestro]
-                    grupos_rango_unicos.extend(otros_grupos)
-                    
-                    for grupo_val in grupos_rango_unicos:
+            # --- 1. ATRASADAS (ARRIBA, ANCHO COMPLETO) ---
+            st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
+            if not entregas_atrasadas.empty:
+                entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
+                entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                edit_atra = st.data_editor(
+                    entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
+                    hide_index=True, 
+                    use_container_width=True,
+                    column_config={
+                        "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
+                        "Fecha Prom.": st.column_config.TextColumn("📅 Venció", disabled=True),
+                        "Patente": st.column_config.TextColumn("Patente", disabled=True), 
+                        "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
+                        "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
+                        "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
+                    },
+                    key="editor_entregas_atra"
+                )
+            else:
+                st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
+                
+            st.divider()
+            
+            # --- 2. PROGRAMADAS (ABAJO, EN COLUMNAS) ---
+            if f_inicio == f_fin:
+                titulo_rango = f"HOY ({f_inicio.strftime('%d/%m')})" if f_inicio == hoy else f"para el {f_inicio.strftime('%d/%m')}"
+            else:
+                titulo_rango = f"del {f_inicio.strftime('%d/%m')} al {f_fin.strftime('%d/%m')}"
+                
+            st.markdown(f"#### 🟢 Entregas Programadas {titulo_rango}")
+            if not entregas_rango.empty:
+                entregas_rango['Fecha Prom.'] = entregas_rango['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
+                
+                orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
+                grupos_rango_unicos = [g for g in orden_grupos_maestro if g in entregas_rango['Grupo'].unique()]
+                otros_grupos = [g for g in entregas_rango['Grupo'].unique() if pd.notna(g) and g not in orden_grupos_maestro]
+                grupos_rango_unicos.extend(otros_grupos)
+                
+                # Crear dos columnas para mostrar los grupos uno al lado del otro
+                cols_grupos = st.columns(2)
+                
+                for idx, grupo_val in enumerate(grupos_rango_unicos):
+                    # Usamos el módulo para alternar entre columna izquierda (0) y derecha (1)
+                    with cols_grupos[idx % 2]:
                         st.caption(f"📍 **{grupo_val}**")
                         df_g_rango = entregas_rango[entregas_rango['Grupo'] == grupo_val].sort_values(by=['Fecha_Promesa_Disp', 'Hora_Entrega'])
                         
@@ -474,32 +502,11 @@ with tab_turnos:
                             key=f"editor_entregas_rango_{grupo_val.replace(' ', '_')}"
                         )
                         edit_rango_df = pd.concat([edit_rango_df, edit_g])
-                else:
-                    st.info("No hay entregas pendientes para el rango y/o asesor seleccionado.")
-                    
-            with col_ea:
-                st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
-                if not entregas_atrasadas.empty:
-                    entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
-                    entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                    edit_atra = st.data_editor(
-                        entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
-                        hide_index=True, 
-                        use_container_width=True,
-                        column_config={
-                            "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
-                            "Fecha Prom.": st.column_config.TextColumn("📅 Venció", disabled=True),
-                            "Patente": st.column_config.TextColumn("Patente", disabled=True), 
-                            "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
-                            "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
-                            "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
-                        },
-                        key="editor_entregas_atra"
-                    )
-                else:
-                    st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
+            else:
+                st.info("No hay entregas pendientes para el rango y/o asesor seleccionado.")
                     
             if not edit_rango_df.empty or not edit_atra.empty:
+                st.markdown("<br>", unsafe_allow_html=True) # Espacio antes del botón
                 if st.button("💾 Confirmar Salida de Vehículos Seleccionados", use_container_width=True):
                     nuevas_confirmadas = []
                     if not edit_rango_df.empty: nuevas_confirmadas.extend(edit_rango_df[edit_rango_df['Entregado_OK'] == True]['Patente'].tolist())
@@ -653,6 +660,11 @@ with tab_prog:
                                     
                             asesor_corto = row['Asesor'].split()[0] if row['Asesor'] else "N/A"
                             
+                            # Mostrar novedades si está detenido
+                            novedad_html = ""
+                            if fase == "⛔ DETENIDOS" and str(row.get('Observaciones', '')).strip() != "" and str(row.get('Observaciones', '')).lower() != "nan":
+                                novedad_html = f"<div style='margin-top: 5px; font-size: 0.85em; color: #721c24; background-color: #f8d7da; padding: 4px; border-radius: 4px; border: 1px solid #f5c6cb;'><strong>Novedad:</strong> {str(row['Observaciones'])}</div>"
+                            
                             st.markdown(f"""
                             <div style='background: white; padding: 8px; margin-top: 8px; border-radius: 5px; border-left: 5px solid {color_borde}; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); font-size: 0.9em;'>
                                 <div style='display: flex; justify-content: space-between; align-items: center;'>
@@ -660,7 +672,8 @@ with tab_prog:
                                     <span title='Fecha Promesa' style='font-size: 0.9em; font-weight: bold;'>{circulo} {texto_fecha}</span>
                                 </div>
                                 <span style='font-size: 0.85em;'>{row['Vehiculo'][:15]}</span><br>
-                                <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} p. | Asesor: {asesor_corto}</span><br>
+                                <span style='font-size: 0.8em; color: gray;'>📦 {row['Paños']} p. | Asesor: {asesor_corto}</span>
+                                {novedad_html}
                             </div>
                             """, unsafe_allow_html=True)
                     else: 
