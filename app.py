@@ -445,7 +445,7 @@ with tab_turnos:
                 entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
                 entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
                 edit_atra = st.data_editor(
-                    entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo']], 
+                    entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo', 'Precio', 'Observaciones']], 
                     hide_index=True, 
                     use_container_width=True,
                     column_config={
@@ -454,7 +454,9 @@ with tab_turnos:
                         "Patente": st.column_config.TextColumn("Patente", disabled=True), 
                         "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
                         "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
-                        "Grupo": st.column_config.TextColumn("Grupo", disabled=True)
+                        "Grupo": st.column_config.TextColumn("Grupo", disabled=True),
+                        "Precio": st.column_config.NumberColumn("Monto ($)", format="$ %d", disabled=True),
+                        "Observaciones": st.column_config.TextColumn("Observaciones", disabled=True)
                     },
                     key="editor_entregas_atra"
                 )
@@ -488,7 +490,7 @@ with tab_turnos:
                         df_g_rango = entregas_rango[entregas_rango['Grupo'] == grupo_val].sort_values(by=['Fecha_Promesa_Disp', 'Hora_Entrega'])
                         
                         edit_g = st.data_editor(
-                            df_g_rango[['Entregado_OK', 'Fecha Prom.', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor']], 
+                            df_g_rango[['Entregado_OK', 'Fecha Prom.', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Precio', 'Observaciones']], 
                             hide_index=True, 
                             use_container_width=True,
                             column_config={
@@ -497,7 +499,9 @@ with tab_turnos:
                                 "Hora_Entrega": st.column_config.TextColumn("⌚ Hora", disabled=True),
                                 "Patente": st.column_config.TextColumn("Patente", disabled=True), 
                                 "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
-                                "Asesor": st.column_config.TextColumn("Asesor", disabled=True)
+                                "Asesor": st.column_config.TextColumn("Asesor", disabled=True),
+                                "Precio": st.column_config.NumberColumn("Monto ($)", format="$ %d", disabled=True),
+                                "Observaciones": st.column_config.TextColumn("Observaciones", disabled=True)
                             },
                             key=f"editor_entregas_rango_{grupo_val.replace(' ', '_')}"
                         )
@@ -572,7 +576,7 @@ with tab_prog:
 
         # --- 2. TABLAS POR ESTADO ---
         st.markdown("## 📑 Listado de Vehículos en Taller (Prioridad por Fecha Promesa)")
-        st.write("Se eliminó el tipo ABC. Columnas actuales: **Dominio, Vehículo y Asesor** para rápida identificación técnica.")
+        st.write("Columnas actuales: Fechas clave, Vehículo, Asesor, Paños, Monto Pendiente (sólo en terminados) y Observaciones.")
         estados_map = [("⏳ EN PROCESO", "PROCESO"), ("⛔ DETENIDOS", "DETENIDO"), ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), ("🚚 ENTREGADOS", "ENTREGADO")]
         
         for titulo, match in estados_map:
@@ -587,14 +591,31 @@ with tab_prog:
                     st.caption(f"**{grupo_nombre}**")
                     if not d_e.empty:
                         d_e = d_e.sort_values(by='Fin', ascending=True, na_position='last')
-                        d_e['Fecha Prom.'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
                         
-                        if m_key in ["TERM PEND", "ENTREGADO"]:
-                            df_vista = d_e[['Estado_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Paños']]
+                        # Formateo de fechas para la tabla
+                        d_e['F. Ingreso'] = d_e['Fecha_Ingreso'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
+                        d_e['1ra Promesa'] = d_e['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
+                        d_e['F. Entrega'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
+                        
+                        # Selección de columnas base (sin fase de taller)
+                        if m_key == "TERM PEND":
+                            cols_to_show = ['F. Ingreso', '1ra Promesa', 'F. Entrega', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Paños', 'Precio', 'Observaciones']
                         else:
-                            df_vista = d_e[['Estado_Taller', 'Fase_Taller', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Paños']]
+                            cols_to_show = ['F. Ingreso', '1ra Promesa', 'F. Entrega', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Paños', 'Observaciones']
                             
-                        st.dataframe(df_vista, hide_index=True, use_container_width=True, key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle")
+                        df_vista = d_e[cols_to_show]
+                        
+                        st.dataframe(
+                            df_vista, 
+                            hide_index=True, 
+                            use_container_width=True, 
+                            column_config={
+                                "Hora_Entrega": st.column_config.TextColumn("Hs"),
+                                "Precio": st.column_config.NumberColumn("Monto ($)", format="$ %d"),
+                                "Observaciones": st.column_config.TextColumn("Observaciones", width="medium")
+                            },
+                            key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle"
+                        )
                     else: st.caption(f"Sin vehículos en este estado.")
                     
             dibujar_tabla(col1, "GRUPO UNO", match)
