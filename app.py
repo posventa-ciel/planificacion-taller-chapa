@@ -249,6 +249,10 @@ with st.sidebar:
     st.markdown("### 🔍 Buscador Rápido")
     busqueda_global = st.text_input("Dominio o Chasis", placeholder="Ej: AB123CD")
     st.caption("Filtra tablas y muestra un resumen.")
+    
+    # 📌 CONTENEDOR RESERVADO PARA RESULTADOS DE BÚSQUEDA (Así queda arriba)
+    contenedor_resultados_busqueda = st.container()
+    
     st.divider()
 
     st.markdown("### 📅 Filtro Mensual")
@@ -315,7 +319,8 @@ if busqueda_global:
         df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
                                               (df_turnos_display['Chasis'].str.contains(termino, na=False))]
     
-    with st.sidebar:
+    # 📌 USAMOS EL CONTENEDOR QUE CREAMOS ARRIBA
+    with contenedor_resultados_busqueda:
         st.markdown("### 📋 Resumen del Vehículo")
         if not df.empty:
             for _, row in df.head(5).iterrows():
