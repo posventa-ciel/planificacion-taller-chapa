@@ -333,39 +333,43 @@ with tab_turnos:
         st.info("**📅 Asistente de Turnos (Disponibilidad Estimada por Grupo):**\n" + 
                 " | ".join([f"**{g}**: libre desde el {f}" for g, f in recomendaciones_grupos.items()]))
     
+    # --- FILTROS GLOBALES PARA LA PESTAÑA ---
+    st.markdown("<h4 style='color: #00235d; margin-top: 10px;'>🔍 Filtros de Visualización (Aplican a Ingresos y Salidas)</h4>", unsafe_allow_html=True)
+    col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
+    with col_fecha:
+        hoy = datetime.today().date()
+        fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=(hoy, hoy), format="DD/MM/YYYY")
+        if isinstance(fechas_seleccionadas, tuple):
+            f_inicio = f_fin = fechas_seleccionadas[0] if len(fechas_seleccionadas) < 2 else fechas_seleccionadas[0]
+            if len(fechas_seleccionadas) == 2: f_fin = fechas_seleccionadas[1]
+        else: f_inicio = f_fin = fechas_seleccionadas
+    with col_asesor: 
+        asesor_filtro = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA)
+    with col_add:
+        with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
+            with st.form("form_sin_turno", clear_on_submit=True):
+                c_pat, c_veh, c_cli = st.columns(3)
+                nueva_patente, nuevo_vehiculo, nuevo_cliente = c_pat.text_input("Patente *"), c_veh.text_input("Vehículo *"), c_cli.selectbox("Cliente", CLIENTES_LISTA)
+                c_seg, c_pre, c_pan = st.columns(3)
+                nuevo_seguro, nuevo_precio, nuevo_panos = c_seg.text_input("Seguro"), c_pre.text_input("Precio ($)"), c_pan.text_input("Paños (Ej: 1.5)")
+                c_tie, c_obs, c_ase = st.columns(3)
+                nuevo_tiempo, nueva_obs = c_tie.text_input("Tiempo Entrega (Días)"), c_obs.text_input("Observaciones")
+                nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0)
+                st.caption("* Campos obligatorios para identificar el auto.")
+                if st.form_submit_button("Agregar al Turnero"):
+                    if nueva_patente and nuevo_vehiculo:
+                        nuevo_ingreso = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
+                        st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
+                        st.success(f"Ingreso sin turno agregado con éxito."); time.sleep(0.5); st.rerun()
+                    else: st.error("Por favor completa la Patente y el Vehículo.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     # --- CAJA 1: INGRESOS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #00235d; margin-top: 0;'>📥 1. INGRESOS: Recepción de Vehículos</h2>", unsafe_allow_html=True)
-        st.write("Administración de turnos y vehículos que **entran** al taller.")
+        st.write("Administración de turnos y vehículos programados para **entrar** al taller en las fechas seleccionadas.")
         
-        col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
-        with col_fecha:
-            hoy = datetime.today().date()
-            fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=(hoy, hoy), format="DD/MM/YYYY")
-            if isinstance(fechas_seleccionadas, tuple):
-                f_inicio = f_fin = fechas_seleccionadas[0] if len(fechas_seleccionadas) < 2 else fechas_seleccionadas[0]
-                if len(fechas_seleccionadas) == 2: f_fin = fechas_seleccionadas[1]
-            else: f_inicio = f_fin = fechas_seleccionadas
-        with col_asesor: asesor_filtro = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA)
-        with col_add:
-            with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
-                with st.form("form_sin_turno", clear_on_submit=True):
-                    c_pat, c_veh, c_cli = st.columns(3)
-                    nueva_patente, nuevo_vehiculo, nuevo_cliente = c_pat.text_input("Patente *"), c_veh.text_input("Vehículo *"), c_cli.selectbox("Cliente", CLIENTES_LISTA)
-                    c_seg, c_pre, c_pan = st.columns(3)
-                    nuevo_seguro, nuevo_precio, nuevo_panos = c_seg.text_input("Seguro"), c_pre.text_input("Precio ($)"), c_pan.text_input("Paños (Ej: 1.5)")
-                    c_tie, c_obs, c_ase = st.columns(3)
-                    nuevo_tiempo, nueva_obs = c_tie.text_input("Tiempo Entrega (Días)"), c_obs.text_input("Observaciones")
-                    nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0)
-                    st.caption("* Campos obligatorios para identificar el auto.")
-                    if st.form_submit_button("Agregar al Turnero"):
-                        if nueva_patente and nuevo_vehiculo:
-                            nuevo_ingreso = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
-                            st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
-                            st.success(f"Ingreso sin turno agregado con éxito."); time.sleep(0.5); st.rerun()
-                        else: st.error("Por favor completa la Patente y el Vehículo.")
-
-        st.divider()
         mask = (df_turnos_display['Fecha'] >= f_inicio) & (df_turnos_display['Fecha'] <= f_fin)
         df_rango = df_turnos_display[mask].copy()
         if asesor_filtro != "TODOS": df_rango = df_rango[df_rango['Asesor'] == asesor_filtro]
@@ -417,50 +421,61 @@ with tab_turnos:
     # --- CAJA 2: SALIDAS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #1e7e34; margin-top: 0;'>📤 2. SALIDAS: Agenda de Entregas</h2>", unsafe_allow_html=True)
-        st.write("Vehículos listos para entregar al cliente. Tildá la casilla verde a medida que se los llevan.")
+        st.write("Vehículos listos para entregar al cliente en las fechas seleccionadas.")
         
         if not df.empty:
             df_no_entregados = df[~df['Estado_Taller'].str.contains("ENTREGADO", na=False)].copy()
             df_no_entregados = df_no_entregados[~df_no_entregados['Patente'].isin(st.session_state.entregas_confirmadas)]
             df_no_entregados['Entregado_OK'] = False
             
-            entregas_hoy = df_no_entregados[df_no_entregados['Fecha_Promesa_Disp'] == hoy].copy()
+            # FILTROS DE RANGO Y ASESOR
+            entregas_rango = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'] >= f_inicio) & (df_no_entregados['Fecha_Promesa_Disp'] <= f_fin)].copy()
             entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
             
+            if asesor_filtro != "TODOS":
+                entregas_rango = entregas_rango[entregas_rango['Asesor'] == asesor_filtro]
+                entregas_atrasadas = entregas_atrasadas[entregas_atrasadas['Asesor'] == asesor_filtro]
+            
             col_eh, col_ea = st.columns(2)
-            edit_hoy_df = pd.DataFrame() # Para juntar todas las mini-tablas de hoy
+            edit_rango_df = pd.DataFrame() 
             edit_atra = pd.DataFrame()
             
             with col_eh:
-                st.markdown("#### 🟢 Entregas Programadas para HOY")
-                if not entregas_hoy.empty:
-                    # Separar por Grupo (usando el orden maestro)
-                    orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
-                    grupos_hoy_unicos = [g for g in orden_grupos_maestro if g in entregas_hoy['Grupo'].unique()]
-                    otros_grupos = [g for g in entregas_hoy['Grupo'].unique() if pd.notna(g) and g not in orden_grupos_maestro]
-                    grupos_hoy_unicos.extend(otros_grupos)
+                if f_inicio == f_fin:
+                    titulo_rango = f"HOY ({f_inicio.strftime('%d/%m')})" if f_inicio == hoy else f"para el {f_inicio.strftime('%d/%m')}"
+                else:
+                    titulo_rango = f"del {f_inicio.strftime('%d/%m')} al {f_fin.strftime('%d/%m')}"
                     
-                    for grupo_val in grupos_hoy_unicos:
+                st.markdown(f"#### 🟢 Entregas Programadas {titulo_rango}")
+                if not entregas_rango.empty:
+                    entregas_rango['Fecha Prom.'] = entregas_rango['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
+                    
+                    orden_grupos_maestro = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "PARABRISAS", "TERCEROS"]
+                    grupos_rango_unicos = [g for g in orden_grupos_maestro if g in entregas_rango['Grupo'].unique()]
+                    otros_grupos = [g for g in entregas_rango['Grupo'].unique() if pd.notna(g) and g not in orden_grupos_maestro]
+                    grupos_rango_unicos.extend(otros_grupos)
+                    
+                    for grupo_val in grupos_rango_unicos:
                         st.caption(f"📍 **{grupo_val}**")
-                        df_g_hoy = entregas_hoy[entregas_hoy['Grupo'] == grupo_val].sort_values(by='Hora_Entrega')
+                        df_g_rango = entregas_rango[entregas_rango['Grupo'] == grupo_val].sort_values(by=['Fecha_Promesa_Disp', 'Hora_Entrega'])
                         
-                        # Creamos el editor SIN la columna Grupo para que quede más limpio
                         edit_g = st.data_editor(
-                            df_g_hoy[['Entregado_OK', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor']], 
+                            df_g_rango[['Entregado_OK', 'Fecha Prom.', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor']], 
                             hide_index=True, 
                             use_container_width=True,
                             column_config={
                                 "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
+                                "Fecha Prom.": st.column_config.TextColumn("📅 Día", disabled=True),
                                 "Hora_Entrega": st.column_config.TextColumn("⌚ Hora", disabled=True),
                                 "Patente": st.column_config.TextColumn("Patente", disabled=True), 
                                 "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
                                 "Asesor": st.column_config.TextColumn("Asesor", disabled=True)
                             },
-                            key=f"editor_entregas_hoy_{grupo_val.replace(' ', '_')}"
+                            key=f"editor_entregas_rango_{grupo_val.replace(' ', '_')}"
                         )
-                        edit_hoy_df = pd.concat([edit_hoy_df, edit_g])
+                        edit_rango_df = pd.concat([edit_rango_df, edit_g])
                 else:
-                    st.info("No hay entregas pendientes para el día de hoy.")
+                    st.info("No hay entregas pendientes para el rango y/o asesor seleccionado.")
                     
             with col_ea:
                 st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
@@ -484,10 +499,10 @@ with tab_turnos:
                 else:
                     st.success("¡Excelente! No hay vehículos con la fecha de entrega atrasada.")
                     
-            if not edit_hoy_df.empty or not edit_atra.empty:
+            if not edit_rango_df.empty or not edit_atra.empty:
                 if st.button("💾 Confirmar Salida de Vehículos Seleccionados", use_container_width=True):
                     nuevas_confirmadas = []
-                    if not edit_hoy_df.empty: nuevas_confirmadas.extend(edit_hoy_df[edit_hoy_df['Entregado_OK'] == True]['Patente'].tolist())
+                    if not edit_rango_df.empty: nuevas_confirmadas.extend(edit_rango_df[edit_rango_df['Entregado_OK'] == True]['Patente'].tolist())
                     if not edit_atra.empty: nuevas_confirmadas.extend(edit_atra[edit_atra['Entregado_OK'] == True]['Patente'].tolist())
                     
                     if nuevas_confirmadas:
