@@ -25,13 +25,6 @@ st.markdown("""<style>
     .kanban-col { background-color: #f8f9fa; border-radius: 8px; padding: 10px; border: 1px solid #e9ecef; }
 </style>""", unsafe_allow_html=True)
 
-# --- BARRA LATERAL (SIDEBAR) Y BUSCADOR ---
-with st.sidebar:
-    st.markdown("### 🔍 Buscador Rápido")
-    busqueda_global = st.text_input("Dominio o Chasis", placeholder="Ej: AB123CD")
-    st.caption("Filtra tablas y muestra un resumen.")
-    st.divider()
-
 # --- ENCABEZADO ---
 st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
 
@@ -60,9 +53,22 @@ def dias_habiles_del_mes(anio, mes):
             dias += 1
     return max(1, dias)
 
-DIAS_HABILES_MES = dias_habiles_del_mes(datetime.now().year, datetime.now().month)
-CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES
-CAPACIDAD_DIARIA_GRUPO = CAPACIDAD_DIARIA_TALLER / 2
+def dias_habiles_restantes_mes(anio, mes):
+    hoy_f = datetime.today().date()
+    if anio == hoy_f.year and mes == hoy_f.month:
+        dia_inicio = hoy_f.day
+    elif date(anio, mes, 1) < hoy_f:
+        return 0
+    else:
+        dia_inicio = 1
+        
+    _, ult_dia = calendar.monthrange(anio, mes)
+    dias_restantes = 0
+    for d in range(dia_inicio, ult_dia + 1):
+        fecha = date(anio, mes, d)
+        if fecha.weekday() < 5 and fecha not in FERIADOS_ARG:
+            dias_restantes += 1
+    return dias_restantes
 
 # --- FUNCIONES ---
 def parsear_fecha_español(texto):
@@ -93,16 +99,6 @@ def obtener_proxima_fecha_libre(dias_carga):
         if fecha.weekday() < 5 and fecha.date() not in FERIADOS_ARG:
             dias_agregados += 1
     return f"{DIAS_SEMANA[fecha.weekday()]} {fecha.strftime('%d/%m')}"
-
-def dias_habiles_restantes_mes():
-    hoy = datetime.today()
-    _, ult_dia = calendar.monthrange(hoy.year, hoy.month)
-    dias_restantes = 0
-    for d in range(hoy.day, ult_dia + 1):
-        fecha = date(hoy.year, hoy.month, d)
-        if fecha.weekday() < 5 and fecha not in FERIADOS_ARG:
-            dias_restantes += 1
-    return max(1, dias_restantes) 
 
 @st.cache_data(ttl=300)
 def obtener_turnos():
@@ -243,39 +239,95 @@ if 'entregas_confirmadas' not in st.session_state:
 
 df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v11.copy()
+df_completo = df.copy() # Guardamos copia para el histórico global
 
-# --- APLICAR BUSCADOR GLOBAL (CON RESUMEN EN LA BARRA LATERAL) ---
+hoy = datetime.today()
+hoy_ym = hoy.strftime('%Y-%m')
+
+# --- BARRA LATERAL (SIDEBAR) Y BUSCADOR ---
+with st.sidebar:
+    st.markdown("### 🔍 Buscador Rápido")
+    busqueda_global = st.text_input("Dominio o Chasis", placeholder="Ej: AB123CD")
+    st.caption("Filtra tablas y muestra un resumen.")
+    st.divider()
+
+    st.markdown("### 📅 Filtro Mensual")
+    
+    # Obtener meses disponibles de los datos
+    meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    m1 = df[df['Mes_Hist'] != 'SIN FECHA']['Mes_Hist'].dropna().unique().tolist()
+    m2 = df_turnos_display['Fecha'].dropna().apply(lambda x: x.strftime('%Y-%m') if pd.notna(x) else None).dropna().unique().tolist()
+    todos_meses_disp = sorted(list(set(m1 + m2)), reverse=True)
+    
+    opciones_meses = ["🗓️ MES ACTUAL", "♾️ TODOS"]
+    mapa_meses = {}
+    for m in todos_meses_disp:
+        try:
+            y, mo = m.split('-')
+            nombre = f"{meses_nombres[int(mo)-1]} {y}"
+            opciones_meses.append(nombre)
+            mapa_meses[nombre] = m
+        except: pass
+        
+    mes_seleccionado_label = st.selectbox("Período de Análisis", opciones_meses)
+    
+    if mes_seleccionado_label == "🗓️ MES ACTUAL":
+        mes_filtro = hoy_ym
+    elif mes_seleccionado_label == "♾️ TODOS":
+        mes_filtro = "TODOS"
+    else:
+        mes_filtro = mapa_meses.get(mes_seleccionado_label, "TODOS")
+        
+    st.caption("Aplica a Turnos, Taller y Facturación. El Histórico se mantiene global.")
+    
+    st.divider()
+    st.markdown("### ⚙️ Sistema")
+    if st.button("🔄 Forzar Actualización", use_container_width=True):
+        st.cache_data.clear()
+        st.success("¡Datos actualizados!"); time.sleep(0.5); st.rerun()
+    st.caption("Datos extraídos de Google Sheets.")
+
+# --- APLICAR FILTRO MENSUSAL GLOBAL A MAESTRO ---
+if mes_filtro != "TODOS":
+    # Conservamos los del mes filtrado y los que no tienen fecha (para no romper Kanban/Detenidos)
+    df = df[(df['Mes_Hist'] == mes_filtro) | (df['Mes_Hist'] == 'SIN FECHA')]
+    año_filtro, mes_num_filtro = map(int, mes_filtro.split('-'))
+    DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
+else:
+    año_filtro, mes_num_filtro = hoy.year, hoy.month
+    DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
+
+CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES
+CAPACIDAD_DIARIA_GRUPO = CAPACIDAD_DIARIA_TALLER / 2
+dias_restantes_calc = dias_habiles_restantes_mes(año_filtro, mes_num_filtro)
+
+# --- APLICAR BUSCADOR GLOBAL ---
 if busqueda_global:
     termino = busqueda_global.upper().strip()
     
-    # 1. Filtrar Taller
     if not df.empty:
         if 'Chasis' not in df.columns: df['Chasis'] = ""
         df = df[(df['Patente'].str.contains(termino, na=False)) | 
                 (df['Chasis'].str.contains(termino, na=False))]
                 
-    # 2. Filtrar Turnos
     if not df_turnos_display.empty:
         if 'Chasis' not in df_turnos_display.columns: df_turnos_display['Chasis'] = ""
         df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
                                               (df_turnos_display['Chasis'].str.contains(termino, na=False))]
     
-    # 3. Dibujar el resumen en la barra lateral
     with st.sidebar:
         st.markdown("### 📋 Resumen del Vehículo")
-        
         if not df.empty:
-            for _, row in df.head(5).iterrows(): # Mostramos hasta 5 coincidencias
+            for _, row in df.head(5).iterrows():
                 f_prom = row.get('Fecha_Promesa_Disp')
                 fecha_str = f_prom.strftime('%d/%m/%Y') if pd.notna(f_prom) else "Sin Fecha"
                 estado_taller = str(row.get('Estado_Taller', ''))
                 
-                # Definir color del borde según el estado
-                if "ENTREGADO" in estado_taller: color_borde = "#28a745" # Verde
-                elif "PROCESO" in estado_taller: color_borde = "#ffc107" # Amarillo
-                elif "DETENIDO" in estado_taller: color_borde = "#dc3545" # Rojo
-                elif "TERM" in estado_taller: color_borde = "#17a2b8" # Celeste
-                else: color_borde = "#6c757d" # Gris
+                if "ENTREGADO" in estado_taller: color_borde = "#28a745"
+                elif "PROCESO" in estado_taller: color_borde = "#ffc107"
+                elif "DETENIDO" in estado_taller: color_borde = "#dc3545"
+                elif "TERM" in estado_taller: color_borde = "#17a2b8"
+                else: color_borde = "#6c757d"
                 
                 st.markdown(f"""
                 <div style='background-color: white; border: 1px solid #dee2e6; padding: 10px; border-radius: 8px; border-left: 6px solid {color_borde}; margin-bottom: 10px; font-size: 0.85em; box-shadow: 0 1px 2px rgba(0,0,0,0.05);'>
@@ -299,16 +351,7 @@ if busqueda_global:
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.warning("No se encontró el vehículo en el taller ni en los turnos.")
-
-# --- BOTÓN DE ACTUALIZACIÓN EN LA BARRA LATERAL ---
-with st.sidebar:
-    st.divider()
-    st.markdown("### ⚙️ Sistema")
-    if st.button("🔄 Forzar Actualización", use_container_width=True):
-        st.cache_data.clear()
-        st.success("¡Datos actualizados!"); time.sleep(0.5); st.rerun()
-    st.caption("Datos extraídos de Google Sheets.")
+            st.warning("No se encontró el vehículo.")
 
 # --- CÁLCULO GLOBAL DE CAPACIDAD ---
 recomendaciones_grupos = {}
@@ -336,15 +379,30 @@ with tab_turnos:
     # --- FILTROS GLOBALES PARA LA PESTAÑA ---
     st.markdown("<h4 style='color: #00235d; margin-top: 10px;'>🔍 Filtros de Visualización (Aplican a Ingresos y Salidas)</h4>", unsafe_allow_html=True)
     col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
+    
     with col_fecha:
-        hoy = datetime.today().date()
-        fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=(hoy, hoy), format="DD/MM/YYYY")
+        # Defaults basados en el Filtro Mensual Global
+        if mes_filtro != "TODOS":
+            primer_dia = date(año_filtro, mes_num_filtro, 1)
+            _, ult_dia_int = calendar.monthrange(año_filtro, mes_num_filtro)
+            ultimo_dia = date(año_filtro, mes_num_filtro, ult_dia_int)
+            
+            if mes_seleccionado_label == "🗓️ MES ACTUAL":
+                rango_default = (hoy.date(), hoy.date()) # Por defecto mostramos solo HOY
+            else:
+                rango_default = (primer_dia, ultimo_dia) # Mes futuro/pasado muestra todo el mes
+        else:
+            rango_default = (hoy.date(), hoy.date())
+            
+        fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=rango_default, format="DD/MM/YYYY")
         if isinstance(fechas_seleccionadas, tuple):
             f_inicio = f_fin = fechas_seleccionadas[0] if len(fechas_seleccionadas) < 2 else fechas_seleccionadas[0]
             if len(fechas_seleccionadas) == 2: f_fin = fechas_seleccionadas[1]
         else: f_inicio = f_fin = fechas_seleccionadas
+        
     with col_asesor: 
         asesor_filtro = st.selectbox("👔 Filtrar por Asesor", ["TODOS"] + ASESORES_LISTA)
+        
     with col_add:
         with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
             with st.form("form_sin_turno", clear_on_submit=True):
@@ -430,7 +488,7 @@ with tab_turnos:
             
             # FILTROS DE RANGO Y ASESOR
             entregas_rango = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'] >= f_inicio) & (df_no_entregados['Fecha_Promesa_Disp'] <= f_fin)].copy()
-            entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy)].copy()
+            entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy.date())].copy()
             
             if asesor_filtro != "TODOS":
                 entregas_rango = entregas_rango[entregas_rango['Asesor'] == asesor_filtro]
@@ -467,7 +525,7 @@ with tab_turnos:
             
             # --- 2. PROGRAMADAS (ABAJO, EN COLUMNAS) ---
             if f_inicio == f_fin:
-                titulo_rango = f"HOY ({f_inicio.strftime('%d/%m')})" if f_inicio == hoy else f"para el {f_inicio.strftime('%d/%m')}"
+                titulo_rango = f"HOY ({f_inicio.strftime('%d/%m')})" if f_inicio == hoy.date() else f"para el {f_inicio.strftime('%d/%m')}"
             else:
                 titulo_rango = f"del {f_inicio.strftime('%d/%m')} al {f_fin.strftime('%d/%m')}"
                 
@@ -480,11 +538,8 @@ with tab_turnos:
                 otros_grupos = [g for g in entregas_rango['Grupo'].unique() if pd.notna(g) and g not in orden_grupos_maestro]
                 grupos_rango_unicos.extend(otros_grupos)
                 
-                # Crear dos columnas para mostrar los grupos uno al lado del otro
                 cols_grupos = st.columns(2)
-                
                 for idx, grupo_val in enumerate(grupos_rango_unicos):
-                    # Usamos el módulo para alternar entre columna izquierda (0) y derecha (1)
                     with cols_grupos[idx % 2]:
                         st.caption(f"📍 **{grupo_val}**")
                         df_g_rango = entregas_rango[entregas_rango['Grupo'] == grupo_val].sort_values(by=['Fecha_Promesa_Disp', 'Hora_Entrega'])
@@ -510,7 +565,7 @@ with tab_turnos:
                 st.info("No hay entregas pendientes para el rango y/o asesor seleccionado.")
                     
             if not edit_rango_df.empty or not edit_atra.empty:
-                st.markdown("<br>", unsafe_allow_html=True) # Espacio antes del botón
+                st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("💾 Confirmar Salida de Vehículos Seleccionados", use_container_width=True):
                     nuevas_confirmadas = []
                     if not edit_rango_df.empty: nuevas_confirmadas.extend(edit_rango_df[edit_rango_df['Entregado_OK'] == True]['Patente'].tolist())
@@ -592,12 +647,10 @@ with tab_prog:
                     if not d_e.empty:
                         d_e = d_e.sort_values(by='Fin', ascending=True, na_position='last')
                         
-                        # Formateo de fechas para la tabla
                         d_e['F. Ingreso'] = d_e['Fecha_Ingreso'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
                         d_e['1ra Promesa'] = d_e['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
                         d_e['F. Entrega'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
                         
-                        # Selección de columnas base (sin fase de taller)
                         if m_key == "TERM PEND":
                             cols_to_show = ['F. Ingreso', '1ra Promesa', 'F. Entrega', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Paños', 'Precio', 'Observaciones']
                         else:
@@ -654,34 +707,32 @@ with tab_prog:
                     
                     if not df_fase.empty:
                         for _, row in df_fase.iterrows():
-                            # Lógica de colores basada en FECHA PROMESA
                             f_prom = row.get('Fecha_Promesa_Disp')
                             
                             if fase == "⛔ DETENIDOS":
-                                color_borde = "#6c757d" # Gris
+                                color_borde = "#6c757d" 
                                 circulo = "⚪"
                                 texto_fecha = "Detenido"
                             else:
                                 if pd.isna(f_prom) or not f_prom:
-                                    color_borde = "#17a2b8" # Celeste
+                                    color_borde = "#17a2b8" 
                                     circulo = "🔵"
                                     texto_fecha = "Sin fecha"
                                 elif f_prom < hoy_kanban:
-                                    color_borde = "#dc3545" # Rojo (Atrasado)
+                                    color_borde = "#dc3545" 
                                     circulo = "🔴"
                                     texto_fecha = f_prom.strftime('%d/%m')
                                 elif f_prom == hoy_kanban:
-                                    color_borde = "#ffc107" # Amarillo (Hoy)
+                                    color_borde = "#ffc107" 
                                     circulo = "🟡"
                                     texto_fecha = f_prom.strftime('%d/%m')
                                 else:
-                                    color_borde = "#28a745" # Verde (A tiempo)
+                                    color_borde = "#28a745" 
                                     circulo = "🟢"
                                     texto_fecha = f_prom.strftime('%d/%m')
                                     
                             asesor_corto = row['Asesor'].split()[0] if row['Asesor'] else "N/A"
                             
-                            # Mostrar novedades si está detenido
                             novedad_html = ""
                             if fase == "⛔ DETENIDOS" and str(row.get('Observaciones', '')).strip() != "" and str(row.get('Observaciones', '')).lower() != "nan":
                                 novedad_html = f"<div style='margin-top: 5px; font-size: 0.85em; color: #721c24; background-color: #f8d7da; padding: 4px; border-radius: 4px; border: 1px solid #f5c6cb;'><strong>Novedad:</strong> {str(row['Observaciones'])}</div>"
@@ -793,7 +844,7 @@ with tab_fac:
         
         porcentaje_logro = min((panos_est / OBJETIVO_MENSUAL_PANOS) * 100 if OBJETIVO_MENSUAL_PANOS > 0 else 0, 100)
         
-        dias_restantes = dias_habiles_restantes_mes()
+        dias_restantes = dias_restantes_calc
         panos_faltantes = max(0, OBJETIVO_MENSUAL_PANOS - panos_est)
         ritmo_diario_necesario = panos_faltantes / dias_restantes if dias_restantes > 0 else 0
         
@@ -985,9 +1036,9 @@ with tab_kpi:
 # PESTAÑA 6: HISTÓRICOS
 # ==========================================
 with tab_hist:
-    if not df.empty:
+    if not df_completo.empty: # Usamos df_completo para que no le afecte el filtro mensual de la barra
         st.subheader("📅 Histórico Mensual")
-        df_hist = df[df['Mes_Hist'] != 'SIN FECHA'].sort_values('Mes_Hist')
+        df_hist = df_completo[df_completo['Mes_Hist'] != 'SIN FECHA'].sort_values('Mes_Hist')
         if not df_hist.empty:
             c_h1, c_h2 = st.columns(2)
             with c_h1:
