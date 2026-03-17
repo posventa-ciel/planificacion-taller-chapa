@@ -9,27 +9,17 @@ import time
 import json
 import gspread
 
-# --- PRUEBA DE CONEXIÓN A GOOGLE SHEETS ---
+# --- CONEXIÓN A GOOGLE SHEETS (GSPREAD) ---
+# Mantenemos la conexión activa para usarla en toda la app
 try:
-    # 1. Sacamos la llave de la caja fuerte de Streamlit
     creds_dict = json.loads(st.secrets["google_credentials"])
     gc = gspread.service_account_from_dict(creds_dict)
-    
-    # 2. Abrimos la planilla (Asegurate de que este ID sea el correcto)
     ID_PLANILLA = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
     planilla = gc.open_by_key(ID_PLANILLA)
-    
-    # 3. Elegimos la pestaña TURNOS (Cambiá el nombre si en tu excel se llama distinto)
     hoja = planilla.worksheet("TURNOS")
-    
-    # 4. Botón mágico de prueba en la barra lateral
-    with st.sidebar:
-        st.divider()
-        if st.button("🤖 Probar Escritura del Robot"):
-            hoja.update_acell('Z1', '¡Hola! El robot está vivo en la Nube ☁️')
-            st.success("¡Mensaje enviado a la celda Z1!")
 except Exception as e:
-    st.sidebar.error(f"Error de conexión: {e}")
+    st.error(f"Error de conexión a Google Sheets: {e}")
+    hoja = None
     
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión Taller CENOA - Jujuy", layout="wide", initial_sidebar_state="expanded")
@@ -167,7 +157,7 @@ def obtener_datos_maestros():
                 cols = list(d.columns)
                 while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
                 if len(cols) > 21: cols[21] = 'ESTADO_FAC'            
-                if len(cols) > 20: cols[20] = 'FASE_TALLER'           
+                if len(cols) > 20: cols[20] = 'FASE_TALLER'            
                 if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
                 if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        
                 if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  
@@ -437,19 +427,84 @@ with tab_turnos:
         with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
             with st.form("form_sin_turno", clear_on_submit=True):
                 c_pat, c_veh, c_cli = st.columns(3)
-                nueva_patente, nuevo_vehiculo, nuevo_cliente = c_pat.text_input("Patente *"), c_veh.text_input("Vehículo *"), c_cli.selectbox("Cliente", CLIENTES_LISTA)
+                nueva_patente = c_pat.text_input("Patente *")
+                nuevo_vehiculo = c_veh.text_input("Vehículo *")
+                nuevo_cliente = c_cli.selectbox("Cliente", CLIENTES_LISTA)
+                
                 c_seg, c_pre, c_pan = st.columns(3)
-                nuevo_seguro, nuevo_precio, nuevo_panos = c_seg.text_input("Seguro"), c_pre.text_input("Precio ($)"), c_pan.text_input("Paños (Ej: 1.5)")
+                nuevo_seguro = c_seg.text_input("Seguro")
+                nuevo_precio = c_pre.text_input("Precio ($)")
+                nuevo_panos = c_pan.text_input("Paños (Ej: 1.5)")
+                
                 c_tie, c_obs, c_ase = st.columns(3)
-                nuevo_tiempo, nueva_obs = c_tie.text_input("Tiempo Entrega (Días)"), c_obs.text_input("Observaciones")
+                nuevo_tiempo = c_tie.text_input("Tiempo Entrega (Días)")
+                nueva_obs = c_obs.text_input("Observaciones")
                 nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0)
+                
+                st.write("---")
+                st.write("📋 Checklist de Recepción:")
+                c_chk1, c_chk2, c_ref = st.columns(3)
+                val_recibido_bool = c_chk1.checkbox("✅ ¿Vehículo Recibido?")
+                val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
+                nueva_referencia = c_ref.text_input("Número de Referencia (OR)")
+
                 st.caption("* Campos obligatorios para identificar el auto.")
-                if st.form_submit_button("Agregar al Turnero"):
+                
+                if st.form_submit_button("Agregar al Turnero y Guardar en Sheets"):
                     if nueva_patente and nuevo_vehiculo:
-                        nuevo_ingreso = pd.DataFrame([{'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False}])
-                        st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
-                        st.success(f"Ingreso sin turno agregado con éxito."); time.sleep(0.5); st.rerun()
-                    else: st.error("Por favor completa la Patente y el Vehículo.")
+                        if hoja is not None:
+                            try:
+                                # 1. Adaptar los booleanos a Si / SI como pediste
+                                val_recibido = "Si" if val_recibido_bool else ""
+                                val_foto = "SI" if val_foto_bool else ""
+                                fecha_str = f_inicio.strftime('%d/%m/%Y')
+                                
+                                # 2. Construir la lista de 16 elementos (Columnas A hasta P)
+                                # A=Tipo, B=Fecha, C=Hora, D=Vehiculo, E=Patente, F=Chasis, G=Asesor, 
+                                # H=Precio, I=Paños, J=Observaciones, K=Tiempo_Entrega, L=Cliente, M=Seguro, 
+                                # N=Recibido, O=Fotos, P=OR
+                                nueva_fila = [
+                                    "NO", # Columna A (NO porque es sin turno)
+                                    fecha_str, # Columna B
+                                    "-", # Columna C (Hora)
+                                    nuevo_vehiculo.upper(), # Columna D
+                                    nueva_patente.upper(), # Columna E
+                                    "", # Columna F (Chasis)
+                                    nuevo_asesor, # Columna G
+                                    nuevo_precio, # Columna H
+                                    nuevo_panos, # Columna I
+                                    nueva_obs, # Columna J
+                                    nuevo_tiempo, # Columna K
+                                    nuevo_cliente, # Columna L
+                                    nuevo_seguro.upper(), # Columna M
+                                    val_recibido, # Columna N (Si)
+                                    val_foto, # Columna O (SI)
+                                    nueva_referencia # Columna P (Referencia)
+                                ]
+                                
+                                # 3. Mandar el robot a escribir al Excel
+                                hoja.append_row(nueva_fila)
+                                
+                                # 4. Actualizar la memoria de Streamlit para que aparezca al toque en pantalla
+                                nuevo_ingreso = pd.DataFrame([{
+                                    'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 
+                                    'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 
+                                    'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 
+                                    'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': val_recibido_bool, 
+                                    'Fotos': val_foto_bool, 'Cancelado': False, 'OR': nueva_referencia, 'Eliminar': False
+                                }])
+                                st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
+                                
+                                st.success(f"¡Vehículo {nueva_patente.upper()} agregado correctamente a la planilla de Google!")
+                                time.sleep(1.5)
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"Error al guardar en Google Sheets: {e}")
+                        else:
+                            st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
+                    else: 
+                        st.error("Por favor completa la Patente y el Vehículo.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
