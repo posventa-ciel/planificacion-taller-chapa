@@ -542,25 +542,65 @@ with tab_turnos:
                     edited_sin = st.data_editor(df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False), "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)}, hide_index=True, use_container_width=True, key="editor_sin")
 
                 if st.button("💾 Guardar Ingresos"):
-                    indices_a_borrar = []
-                    if not edited_prog.empty:
-                        for idx, row in edited_prog.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
-                    if not edited_sin.empty:
-                        for idx, row in edited_sin.iterrows():
-                            if row.get('Eliminar', False): indices_a_borrar.append(idx)
-                            else: st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
-                    if indices_a_borrar: st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
-                    st.success("Actualizado."); time.sleep(0.5); st.rerun() 
+                    with st.spinner("Conectando con Google Sheets y buscando filas..."):
+                        patentes_sheet = hoja.col_values(5) if hoja else [] # Trae todas las patentes (Columna E)
+                        indices_a_borrar = []
+                        
+                        if not edited_prog.empty:
+                            for idx, row in edited_prog.iterrows():
+                                row_orig = df_prog.loc[idx]
+                                # Chequeamos si hubo cambios para no saturar a Google
+                                if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor']):
+                                    st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                                    
+                                    if hoja and row['Patente'].upper() in patentes_sheet:
+                                        fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
+                                        try:
+                                            hoja.update_acell(f'N{fila_sheet}', "Si" if row['Recibido'] else "")
+                                            hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
+                                            hoja.update_acell(f'P{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
+                                            hoja.update_acell(f'G{fila_sheet}', row['Asesor']) # Por si cambiaron de asesor
+                                        except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
+                                        
+                        if not edited_sin.empty:
+                            for idx, row in edited_sin.iterrows():
+                                if row.get('Eliminar', False): indices_a_borrar.append(idx)
+                                else:
+                                    row_orig = df_sin.loc[idx]
+                                    if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor']):
+                                        st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                                        if hoja and row['Patente'].upper() in patentes_sheet:
+                                            fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
+                                            try:
+                                                hoja.update_acell(f'N{fila_sheet}', "Si" if row['Recibido'] else "")
+                                                hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
+                                                hoja.update_acell(f'P{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
+                                                hoja.update_acell(f'G{fila_sheet}', row['Asesor'])
+                                            except: pass
+                                            
+                        if indices_a_borrar: st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
+                        st.success("¡Ingresos guardados correctamente en Google Sheets!"); time.sleep(1.5); st.rerun() 
 
             st.write("#### 🏁 Turnos Completados (Ya tienen OR)")
             if not df_recibidos.empty:
                 edited_recibidos = st.data_editor(df_recibidos[['Tipo', 'Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Recibido', 'Fotos', 'OR']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY", disabled=True), "Recibido": st.column_config.CheckboxColumn("✅ Recibido"), "Fotos": st.column_config.CheckboxColumn("📸 Fotos"), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10)}, hide_index=True, use_container_width=True, key="editor_recibidos")
+                
                 if st.button("💾 Guardar Correcciones (Completados)"):
-                    for idx, row in edited_recibidos.iterrows(): st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR']] = row[['Recibido', 'Fotos', 'OR']]
-                    st.success("Correcciones aplicadas."); time.sleep(0.5); st.rerun()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
+                    with st.spinner("Actualizando planilla en la nube..."):
+                        patentes_sheet = hoja.col_values(5) if hoja else []
+                        for idx, row in edited_recibidos.iterrows():
+                            row_orig = df_recibidos.loc[idx]
+                            if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR'])):
+                                st.session_state.memoria_turnos_v11.loc[idx, ['Recibido', 'Fotos', 'OR']] = row[['Recibido', 'Fotos', 'OR']]
+                                if hoja and row['Patente'].upper() in patentes_sheet:
+                                    fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
+                                    try:
+                                        hoja.update_acell(f'N{fila_sheet}', "Si" if row['Recibido'] else "")
+                                        hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
+                                        hoja.update_acell(f'P{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
+                                    except: pass
+                        st.success("Correcciones aplicadas y guardadas."); time.sleep(1.5); st.rerun()
+                        
     # --- CAJA 2: SALIDAS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #1e7e34; margin-top: 0;'>📤 2. SALIDAS: Agenda de Entregas</h2>", unsafe_allow_html=True)
