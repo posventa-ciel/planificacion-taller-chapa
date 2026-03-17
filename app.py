@@ -6,6 +6,31 @@ import calendar
 import re
 import time
 
+import json
+import gspread
+
+# --- PRUEBA DE CONEXIÓN A GOOGLE SHEETS ---
+try:
+    # 1. Sacamos la llave de la caja fuerte de Streamlit
+    creds_dict = json.loads(st.secrets["google_credentials"])
+    gc = gspread.service_account_from_dict(creds_dict)
+    
+    # 2. Abrimos la planilla (Asegurate de que este ID sea el correcto)
+    ID_PLANILLA = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
+    planilla = gc.open_by_key(ID_PLANILLA)
+    
+    # 3. Elegimos la pestaña TURNOS (Cambiá el nombre si en tu excel se llama distinto)
+    hoja = planilla.worksheet("TURNOS")
+    
+    # 4. Botón mágico de prueba en la barra lateral
+    with st.sidebar:
+        st.divider()
+        if st.button("🤖 Probar Escritura del Robot"):
+            hoja.update_acell('Z1', '¡Hola! El robot está vivo en la Nube ☁️')
+            st.success("¡Mensaje enviado a la celda Z1!")
+except Exception as e:
+    st.sidebar.error(f"Error de conexión: {e}")
+    
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión Taller CENOA - Jujuy", layout="wide", initial_sidebar_state="expanded")
 
