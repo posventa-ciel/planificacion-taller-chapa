@@ -483,7 +483,7 @@ with tab_turnos:
                                 ]
                                 
                                 # 3. Mandar el robot a escribir al Excel
-                                hoja.append_row(nueva_fila)
+                                hoja.append_row(nueva_fila, table_range="A1")
                                 
                                 # 4. Actualizar la memoria de Streamlit para que aparezca al toque en pantalla
                                 nuevo_ingreso = pd.DataFrame([{
