@@ -968,7 +968,7 @@ with tab_fac:
         
         pesos_fac, panos_fac = df_fac['Precio'].sum(), df_fac['Paños'].sum()
         pesos_si, panos_si = df_si['Precio'].sum(), df_si['Paños'].sum()
-        pesos_est, pesos_fac + pesos_si, panos_fac + panos_si
+        pesos_est, panos_est = pesos_fac + pesos_si, panos_fac + panos_si
         
         porcentaje_logro = min((panos_est / OBJETIVO_MENSUAL_PANOS) * 100 if OBJETIVO_MENSUAL_PANOS > 0 else 0, 100)
         
