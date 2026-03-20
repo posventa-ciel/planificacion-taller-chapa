@@ -153,41 +153,46 @@ def obtener_datos_maestros():
             d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
             d.columns = d.columns.str.strip().str.upper()
             
-            if n != "PARABRISAS":
-                cols = list(d.columns)
-                while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
-                if len(cols) > 21: cols[21] = 'ESTADO_FAC'            
-                if len(cols) > 20: cols[20] = 'FASE_TALLER'            
-                if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
-                if len(cols) > 15: cols[15] = 'EMPRESA_TALLER'        
-                if len(cols) > 11: cols[11] = 'OBSERVACIONES_TALLER'  
-                if len(cols) > 9: cols[9] = 'HORA_ENTREGA'            
-                if len(cols) > 8: cols[8] = 'FECHA_PROMESA_I'         
-                if len(cols) > 7: cols[7] = 'FECHA_TICKET'            
-                if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
-                if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    
-                d.columns = cols
-            else:
-                renames = {}
-                for c in d.columns:
-                    if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
-                    elif 'ESTADO TALLER' in c or 'ESTADOTALLER' in c: renames[c] = 'ESTADO_TALLER'
-                    elif 'FASE' in c: renames[c] = 'FASE_TALLER'
-                    elif 'COMPAÑIA' in c or 'SEGURO' in c or 'EMPRESA' in c: renames[c] = 'EMPRESA_TALLER'
-                    elif 'OBSERVACION' in c: renames[c] = 'OBSERVACIONES_TALLER'
-                    elif 'PROMESA' in c: renames[c] = 'FECHA_PROMESA_I'
-                    elif 'TICKET' in c: renames[c] = 'FECHA_TICKET'
-                    elif 'INGRESO' in c: renames[c] = 'FECHA_INGRESO_TALLER'
-                    elif 'HORA' in c: renames[c] = 'HORA_ENTREGA'
-                d = d.rename(columns=renames)
+            # --- NUEVA LÓGICA: BUSCA LAS COLUMNAS POR NOMBRE, NO POR LETRA ---
+            renames = {}
+            for c in d.columns:
+                if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
+                elif 'ESTADO TALLER' in c or 'ESTADOTALLER' in c: renames[c] = 'ESTADO_TALLER'
+                elif 'FASE' in c: renames[c] = 'FASE_TALLER'
+                elif 'COMPAÑIA' in c or 'SEGURO' in c or 'EMPRESA' in c or 'CLIENTE' in c: renames[c] = 'EMPRESA_TALLER'
+                elif 'OBSERVACION' in c: renames[c] = 'OBSERVACIONES_TALLER'
+                elif 'PROMESA' in c: renames[c] = 'FECHA_PROMESA_I'
+                elif 'TICKET' in c: renames[c] = 'FECHA_TICKET'
+                elif 'INGRESO' in c: renames[c] = 'FECHA_INGRESO_TALLER'
+                elif 'HORA' in c: renames[c] = 'HORA_ENTREGA'
+                elif 'PRECIO' in c or 'MONTO' in c: renames[c] = 'PRECIO'
+                elif 'PAÑO' in c or 'PANOS' in c: renames[c] = 'PAÑOS'
+                elif 'PATENTE' in c or 'DOMINIO' in c: renames[c] = 'PATENTE'
+                elif 'VEHICULO' in c or 'AUTO' in c: renames[c] = 'VEHICULO'
+                elif 'ASESOR' in c: renames[c] = 'ASESOR'
 
-            if 'PATENTE' in d.columns: 
-                d = d.dropna(subset=['PATENTE'])
-                d = d[d['PATENTE'].str.strip() != ""]
-                d['GRUPO_ORIGEN'] = n
-                dfs.append(d)
-        except: pass
-        
+            d = d.rename(columns=renames)
+
+            # Asegurar que existan las columnas clave si la hoja está muy vacía
+            for col_req in ['PATENTE', 'PRECIO', 'PAÑOS', 'ESTADO_FAC']:
+                if col_req not in d.columns:
+                    d[col_req] = ""
+
+            # Rescatar filas que tienen plata/paños facturados pero se olvidaron la Patente
+            d['PATENTE'] = d['PATENTE'].fillna("").astype(str).str.strip()
+            d['ESTADO_FAC'] = d['ESTADO_FAC'].fillna("").astype(str).str.strip().str.upper()
+            
+            # Filtro inteligente: Nos quedamos con la fila SI tiene patente O SI tiene un estado de facturación
+            d = d[(d['PATENTE'] != "") | (d['ESTADO_FAC'].isin(['FAC', 'SI']))]
+            
+            # Le ponemos una etiqueta provisoria si la patente está vacía
+            d['PATENTE'] = d['PATENTE'].replace("", "S/P (Sin Patente)")
+            
+            d['GRUPO_ORIGEN'] = n
+            dfs.append(d)
+        except Exception as e:
+            pass
+            
     if not dfs: return pd.DataFrame()
     df_raw = pd.concat(dfs, ignore_index=True)
     filas = []
