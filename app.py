@@ -153,7 +153,7 @@ def obtener_datos_maestros():
             d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
             d.columns = d.columns.str.strip().str.upper()
             
-            # --- NUEVA LÓGICA: BUSCA LAS COLUMNAS POR NOMBRE, NO POR LETRA ---
+            # --- NUEVA LÓGICA: BUSCA LAS COLUMNAS POR NOMBRE ---
             renames = {}
             for c in d.columns:
                 if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
@@ -172,6 +172,9 @@ def obtener_datos_maestros():
                 elif 'ASESOR' in c: renames[c] = 'ASESOR'
 
             d = d.rename(columns=renames)
+
+            # --- SOLUCIÓN AL ERROR DE PANDAS ---
+            d = d.loc[:, ~d.columns.duplicated()]
 
             # Asegurar que existan las columnas clave si la hoja está muy vacía
             for col_req in ['PATENTE', 'PRECIO', 'PAÑOS', 'ESTADO_FAC']:
@@ -459,15 +462,10 @@ with tab_turnos:
                     if nueva_patente and nuevo_vehiculo:
                         if hoja is not None:
                             try:
-                                # 1. Adaptar los booleanos a Si / SI como pediste
                                 val_recibido = "Si" if val_recibido_bool else ""
                                 val_foto = "SI" if val_foto_bool else ""
                                 fecha_str = f_inicio.strftime('%d/%m/%Y')
                                 
-                                # 2. Construir la lista de 16 elementos (Columnas A hasta P)
-                                # A=Tipo, B=Fecha, C=Hora, D=Vehiculo, E=Patente, F=Chasis, G=Asesor, 
-                                # H=Precio, I=Paños, J=Observaciones, K=Tiempo_Entrega, L=Cliente, M=Seguro, 
-                                # N=Recibido, O=Fotos, P=OR
                                 nueva_fila = [
                                     "NO", # Columna A (NO porque es sin turno)
                                     fecha_str, # Columna B
@@ -487,10 +485,9 @@ with tab_turnos:
                                     nueva_referencia # Columna P (Referencia)
                                 ]
                                 
-                                # 3. Mandar el robot a escribir al Excel
+                                # Le decimos que arranque a escribir en la columna A sí o sí
                                 hoja.append_row(nueva_fila, table_range="A1")
                                 
-                                # 4. Actualizar la memoria de Streamlit para que aparezca al toque en pantalla
                                 nuevo_ingreso = pd.DataFrame([{
                                     'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 
                                     'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 
@@ -554,7 +551,6 @@ with tab_turnos:
                         if not edited_prog.empty:
                             for idx, row in edited_prog.iterrows():
                                 row_orig = df_prog.loc[idx]
-                                # Chequeamos si hubo cambios para no saturar a Google
                                 if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor']):
                                     st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
                                     
@@ -564,7 +560,7 @@ with tab_turnos:
                                             hoja.update_acell(f'N{fila_sheet}', "Si" if row['Recibido'] else "")
                                             hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
                                             hoja.update_acell(f'P{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
-                                            hoja.update_acell(f'G{fila_sheet}', row['Asesor']) # Por si cambiaron de asesor
+                                            hoja.update_acell(f'G{fila_sheet}', row['Asesor']) 
                                         except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
                                         
                         if not edited_sin.empty:
@@ -605,7 +601,9 @@ with tab_turnos:
                                         hoja.update_acell(f'P{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
                                     except: pass
                         st.success("Correcciones aplicadas y guardadas."); time.sleep(1.5); st.rerun()
-                        
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # --- CAJA 2: SALIDAS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #1e7e34; margin-top: 0;'>📤 2. SALIDAS: Agenda de Entregas</h2>", unsafe_allow_html=True)
@@ -970,7 +968,7 @@ with tab_fac:
         
         pesos_fac, panos_fac = df_fac['Precio'].sum(), df_fac['Paños'].sum()
         pesos_si, panos_si = df_si['Precio'].sum(), df_si['Paños'].sum()
-        pesos_est, panos_est = pesos_fac + pesos_si, panos_fac + panos_si
+        pesos_est, pesos_fac + pesos_si, panos_fac + panos_si
         
         porcentaje_logro = min((panos_est / OBJETIVO_MENSUAL_PANOS) * 100 if OBJETIVO_MENSUAL_PANOS > 0 else 0, 100)
         
