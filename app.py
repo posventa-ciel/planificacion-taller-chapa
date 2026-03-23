@@ -1169,10 +1169,10 @@ with tab_fac:
                     res_empresa_pie = df_cierre.groupby('Cliente')[['Precio']].sum().reset_index()
                     st.plotly_chart(px.pie(res_empresa_pie, values='Precio', names='Cliente', hole=0.4, title="Participación en el Cierre Estimado ($)"), use_container_width=True)
 
-        # --- GESTIÓN DE TERCEROS Y PARABRISAS ---
+        # --- GESTIÓN DE TERCEROS ---
         st.divider()
-        st.markdown("### 🤝 Gestión Financiera de Terceros y Parabrisas")
-        df_terceros = df_analisis[(df_analisis['Grupo'].isin(['TERCEROS', 'PARABRISAS'])) & (df_analisis['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
+        st.markdown("### 🤝 Gestión Financiera de Terceros")
+        df_terceros = df_analisis[(df_analisis['Grupo'] == 'TERCEROS') & (df_analisis['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
         
         if not df_terceros.empty:
             tot_ter_fac = df_terceros['Precio'].sum()
@@ -1181,12 +1181,12 @@ with tab_fac:
             tot_ter_panos = df_terceros['Paños'].sum()
             
             c_t1, c_t2, c_t3, c_t4 = st.columns(4)
-            c_t1.markdown(f'<div class="metric-card"><div class="metric-title">Total Venta (Terceros + Parabrisas)</div><div class="metric-value-money" style="font-size: 1.5rem;">${tot_ter_fac:,.0f}</div></div>', unsafe_allow_html=True)
+            c_t1.markdown(f'<div class="metric-card"><div class="metric-title">Total Venta (Terceros)</div><div class="metric-value-money" style="font-size: 1.5rem;">${tot_ter_fac:,.0f}</div></div>', unsafe_allow_html=True)
             c_t2.markdown(f'<div class="metric-card"><div class="metric-title">Costo Total</div><div class="metric-value-money" style="color:#dc3545; font-size: 1.5rem;">${tot_ter_costo:,.0f}</div></div>', unsafe_allow_html=True)
             c_t3.markdown(f'<div class="metric-card"><div class="metric-title">Margen de Ganancia</div><div class="metric-value-money" style="color:#28a745; font-size: 1.5rem;">${tot_ter_margen:,.0f}</div></div>', unsafe_allow_html=True)
             c_t4.markdown(f'<div class="metric-card"><div class="metric-title">Paños Asignados</div><div class="metric-value-number" style="font-size: 1.5rem;">{tot_ter_panos:.1f}</div></div>', unsafe_allow_html=True)
         else:
-            st.info("No hay datos de Terceros o Parabrisas en estado Facturado o Aprobado para el período seleccionado.")
+            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
 
 # ==========================================
 # PESTAÑA 5: KPIs
