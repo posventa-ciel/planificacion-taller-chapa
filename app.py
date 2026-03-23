@@ -148,36 +148,12 @@ def obtener_datos_maestros():
     dfs = []
     for n, gid in GIDS.items():
         try:
-            # 🛠️ MAGIA NUEVA: AUTO-DETECTOR DE ENCABEZADOS
-            # Leemos las filas a ciegas sin asumir nada
-            d_raw = pd.read_csv(f"{URL_BASE}{gid}", dtype=str, header=None)
+            d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
+            d.columns = d.columns.str.strip().str.upper()
             
-            # Buscamos en las primeras 15 filas dónde están realmente los nombres de las columnas
-            idx_header = 0
-            for i in range(min(15, len(d_raw))):
-                fila_str = " ".join(d_raw.iloc[i].fillna("").astype(str).str.upper())
-                # Palabras clave que indican que ESTA es la fila de títulos
-                if 'ESTADO' in fila_str or 'DOMINIO' in fila_str or 'PATENTE' in fila_str or 'CLIENTE' in fila_str or 'COMPAÑIA' in fila_str or 'PRECIO' in fila_str:
-                    idx_header = i
-                    break
-                    
-            # Set columns to this row and rename empty columns safely
-            cols = []
-            for j, val in enumerate(d_raw.iloc[idx_header]):
-                val_str = str(val).strip().upper()
-                if val_str == 'NAN' or val_str == 'NONE' or not val_str:
-                    cols.append(f"VACIA_{j}")
-                else:
-                    cols.append(val_str)
-                    
-            d_raw.columns = cols
-            # Cortamos el dataframe para ignorar los títulos grandes de arriba
-            d = d_raw.iloc[idx_header + 1:].reset_index(drop=True)
-
-            # A partir de acá, la lógica fluye perfecta porque ya tenemos las columnas limpias
             if n in ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES"]:
                 cols = list(d.columns)
-                while len(cols) < 22: cols.append(f"VACIA_EXTRA_{len(cols)}")
+                while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
                 if len(cols) > 21: cols[21] = 'ESTADO_FAC'            
                 if len(cols) > 20: cols[20] = 'FASE_TALLER'            
                 if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
@@ -189,7 +165,7 @@ def obtener_datos_maestros():
                 if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
                 if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    
                 d.columns = cols
-            else: # PARABRISAS y TERCEROS
+            else: # PARABRISAS y TERCEROS (Mapeo Inteligente)
                 renames = {}
                 for c in d.columns:
                     c_str = str(c).upper().strip()
@@ -203,14 +179,14 @@ def obtener_datos_maestros():
                     elif 'INGRESO' in c_str or c_str == 'FECHA': renames[c] = 'FECHA_INGRESO_TALLER'
                     elif 'HORA' in c_str: renames[c] = 'HORA_ENTREGA'
                     elif 'DOMINIO' in c_str or 'PATENTE' in c_str: renames[c] = 'PATENTE'
-                    elif 'PRECIO' in c_str or 'MONTO' in c_str or 'TOTAL' in c_str: renames[c] = 'PRECIO'
+                    elif 'PRECIO' in c_str: renames[c] = 'PRECIO'
                     elif 'COSTO' in c_str: renames[c] = 'COSTO'
                     elif 'TERCERO' in c_str: renames[c] = 'ASESOR'
                     elif 'MES' in c_str: renames[c] = 'MES'
                     elif 'MARCA' in c_str or 'VEHICULO' in c_str: renames[c] = 'VEHICULO'
                 d = d.rename(columns=renames)
                 
-                # Resuelve el problema de la celda combinada de MES
+                # 🛠️ SOLUCIÓN A CELDAS COMBINADAS: Propagamos el nombre del mes hacia las filas de abajo
                 if 'MES' in d.columns:
                     d['MES'] = d['MES'].replace(r'^\s*$', pd.NA, regex=True).ffill()
 
@@ -219,9 +195,7 @@ def obtener_datos_maestros():
                 d = d[d['PATENTE'].str.strip() != ""]
                 d['GRUPO_ORIGEN'] = n
                 dfs.append(d)
-        except Exception as e: 
-            print(f"Error en pestaña {n}: {e}")
-            pass
+        except: pass
         
     if not dfs: return pd.DataFrame()
     df_raw = pd.concat(dfs, ignore_index=True)
@@ -265,7 +239,7 @@ def obtener_datos_maestros():
         try: costo_val = float(costo_raw) if costo_raw else 0.0
         except: costo_val = 0.0
         
-        # Resuelve el problema del punto final en "FAC."
+        # 🛠️ SOLUCIÓN AL PUNTO: Eliminamos puntos de 'FAC.' y normalizamos
         estado_fac_raw = str(row.get('ESTADO_FAC', '')).replace('.', '').strip().upper()
         
         estado = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper() or "SIN ESTADO"
