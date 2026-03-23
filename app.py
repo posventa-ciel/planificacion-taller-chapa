@@ -5,12 +5,10 @@ from datetime import datetime, timedelta, date
 import calendar
 import re
 import time
-
 import json
 import gspread
 
 # --- CONEXIÓN A GOOGLE SHEETS (GSPREAD) ---
-# Mantenemos la conexión activa para usarla en toda la app
 try:
     creds_dict = json.loads(st.secrets["google_credentials"])
     gc = gspread.service_account_from_dict(creds_dict)
@@ -181,6 +179,11 @@ def obtener_datos_maestros():
                     elif 'HORA' in c: renames[c] = 'HORA_ENTREGA'
                 d = d.rename(columns=renames)
 
+            # --- BUSCAMOS LA COLUMNA DE COSTO PARA TERCEROS Y DEMÁS ---
+            col_costo = next((c for c in d.columns if 'COSTO' in c), None)
+            if col_costo:
+                d = d.rename(columns={col_costo: 'COSTO'})
+
             if 'PATENTE' in d.columns: 
                 d = d.dropna(subset=['PATENTE'])
                 d = d[d['PATENTE'].str.strip() != ""]
@@ -223,6 +226,11 @@ def obtener_datos_maestros():
         precio_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
         try: precio_val = float(precio_raw) if precio_raw else 0.0
         except: precio_val = 0.0
+
+        # --- EXTRACCIÓN DEL COSTO ---
+        costo_raw = str(row.get('COSTO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
+        try: costo_val = float(costo_raw) if costo_raw else 0.0
+        except: costo_val = 0.0
         
         estado = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper() or "SIN ESTADO"
         cliente = str(row.get('EMPRESA_TALLER', 'PARTICULAR')).replace('nan', '').strip().upper() or "PARTICULAR"
@@ -241,7 +249,9 @@ def obtener_datos_maestros():
             'Hora_Entrega': hora_entrega,
             'Mes_Hist': mes_hist, 'Paños': panos, 'Dias_Reparacion': dias_rep, 'Tipo_ABC': clasificar_abc(panos),
             'Estado_Fac': str(row.get('ESTADO_FAC', '')).strip().upper(), 
-            'Estado_Taller': estado, 'Fase_Taller': fase, 'Precio': precio_val, 'Observaciones': str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
+            'Estado_Taller': estado, 'Fase_Taller': fase, 
+            'Precio': precio_val, 'Costo': costo_val, # Guardamos el precio y el costo
+            'Observaciones': str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
         })
     return pd.DataFrame(filas)
 
@@ -1135,6 +1145,25 @@ with tab_fac:
                 if not df_cierre.empty:
                     res_empresa_pie = df_cierre.groupby('Cliente')[['Precio']].sum().reset_index()
                     st.plotly_chart(px.pie(res_empresa_pie, values='Precio', names='Cliente', hole=0.4, title="Participación en el Cierre Estimado ($)"), use_container_width=True)
+
+        # --- GESTIÓN DE TERCEROS ---
+        st.divider()
+        st.markdown("### 🤝 Gestión Financiera de Terceros")
+        df_terceros = df_analisis[(df_analisis['Grupo'] == 'TERCEROS') & (df_analisis['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
+        
+        if not df_terceros.empty:
+            tot_ter_fac = df_terceros['Precio'].sum()
+            tot_ter_costo = df_terceros['Costo'].sum()
+            tot_ter_margen = tot_ter_fac - tot_ter_costo
+            tot_ter_panos = df_terceros['Paños'].sum()
+            
+            c_t1, c_t2, c_t3, c_t4 = st.columns(4)
+            c_t1.markdown(f'<div class="metric-card"><div class="metric-title">Total Terceros (Venta)</div><div class="metric-value-money" style="font-size: 1.5rem;">${tot_ter_fac:,.0f}</div></div>', unsafe_allow_html=True)
+            c_t2.markdown(f'<div class="metric-card"><div class="metric-title">Costo Terceros</div><div class="metric-value-money" style="color:#dc3545; font-size: 1.5rem;">${tot_ter_costo:,.0f}</div></div>', unsafe_allow_html=True)
+            c_t3.markdown(f'<div class="metric-card"><div class="metric-title">Margen de Ganancia</div><div class="metric-value-money" style="color:#28a745; font-size: 1.5rem;">${tot_ter_margen:,.0f}</div></div>', unsafe_allow_html=True)
+            c_t4.markdown(f'<div class="metric-card"><div class="metric-title">Paños Tercerizados</div><div class="metric-value-number" style="font-size: 1.5rem;">{tot_ter_panos:.1f}</div></div>', unsafe_allow_html=True)
+        else:
+            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
 
 # ==========================================
 # PESTAÑA 5: KPIs
