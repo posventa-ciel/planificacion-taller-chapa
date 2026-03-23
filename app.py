@@ -148,12 +148,29 @@ def obtener_datos_maestros():
     dfs = []
     for n, gid in GIDS.items():
         try:
-            d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
-            d.columns = d.columns.str.strip().str.upper()
+            d_raw = pd.read_csv(f"{URL_BASE}{gid}", dtype=str, header=None)
             
+            idx_header = 0
+            for i in range(min(15, len(d_raw))):
+                fila_str = " ".join(d_raw.iloc[i].fillna("").astype(str).str.upper())
+                if 'ESTADO' in fila_str or 'DOMINIO' in fila_str or 'PATENTE' in fila_str or 'CLIENTE' in fila_str or 'COMPAÑIA' in fila_str or 'PRECIO' in fila_str:
+                    idx_header = i
+                    break
+                    
+            cols = []
+            for j, val in enumerate(d_raw.iloc[idx_header]):
+                val_str = str(val).strip().upper()
+                if val_str == 'NAN' or val_str == 'NONE' or not val_str:
+                    cols.append(f"VACIA_{j}")
+                else:
+                    cols.append(val_str)
+                    
+            d_raw.columns = cols
+            d = d_raw.iloc[idx_header + 1:].reset_index(drop=True)
+
             if n in ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES"]:
                 cols = list(d.columns)
-                while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
+                while len(cols) < 22: cols.append(f"VACIA_EXTRA_{len(cols)}")
                 if len(cols) > 21: cols[21] = 'ESTADO_FAC'            
                 if len(cols) > 20: cols[20] = 'FASE_TALLER'            
                 if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
@@ -165,7 +182,7 @@ def obtener_datos_maestros():
                 if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
                 if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    
                 d.columns = cols
-            else: # PARABRISAS y TERCEROS (Mapeo Inteligente)
+            else: 
                 renames = {}
                 for c in d.columns:
                     c_str = str(c).upper().strip()
@@ -179,23 +196,29 @@ def obtener_datos_maestros():
                     elif 'INGRESO' in c_str or c_str == 'FECHA': renames[c] = 'FECHA_INGRESO_TALLER'
                     elif 'HORA' in c_str: renames[c] = 'HORA_ENTREGA'
                     elif 'DOMINIO' in c_str or 'PATENTE' in c_str: renames[c] = 'PATENTE'
-                    elif 'PRECIO' in c_str: renames[c] = 'PRECIO'
-                    elif 'COSTO' in c_str: renames[c] = 'COSTO'
+                    elif 'PRECIO' in c_str or 'MONTO' in c_str or 'TOTAL' in c_str: 
+                        if 'PRECIO' not in renames.values(): renames[c] = 'PRECIO' # Solo la primera vez
+                    elif 'COSTO' in c_str: 
+                        if 'COSTO' not in renames.values(): renames[c] = 'COSTO' # Solo la primera vez
                     elif 'TERCERO' in c_str: renames[c] = 'ASESOR'
                     elif 'MES' in c_str: renames[c] = 'MES'
                     elif 'MARCA' in c_str or 'VEHICULO' in c_str: renames[c] = 'VEHICULO'
                 d = d.rename(columns=renames)
                 
-                # 🛠️ SOLUCIÓN A CELDAS COMBINADAS: Propagamos el nombre del mes hacia las filas de abajo
                 if 'MES' in d.columns:
                     d['MES'] = d['MES'].replace(r'^\s*$', pd.NA, regex=True).ffill()
+
+            # 🛡️ ESCUDO ANTI-DUPLICADOS: Borra cualquier columna repetida generada accidentalmente
+            d = d.loc[:, ~d.columns.duplicated()]
 
             if 'PATENTE' in d.columns: 
                 d = d.dropna(subset=['PATENTE'])
                 d = d[d['PATENTE'].str.strip() != ""]
                 d['GRUPO_ORIGEN'] = n
                 dfs.append(d)
-        except: pass
+        except Exception as e: 
+            print(f"Error en pestaña {n}: {e}")
+            pass
         
     if not dfs: return pd.DataFrame()
     df_raw = pd.concat(dfs, ignore_index=True)
@@ -206,7 +229,7 @@ def obtener_datos_maestros():
     for _, row in df_raw.iterrows():
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         f_fin_disp = f_fin.date() if f_fin else None
-        if not f_fin: f_fin = datetime.now() + timedelta(days=3650) # Año 2036
+        if not f_fin: f_fin = datetime.now() + timedelta(days=3650) 
         
         mes_hist = f_fin.strftime('%Y-%m') if f_fin.year < 2030 else "SIN FECHA"
         if row.get('GRUPO_ORIGEN') in ['PARABRISAS', 'TERCEROS']:
@@ -239,7 +262,6 @@ def obtener_datos_maestros():
         try: costo_val = float(costo_raw) if costo_raw else 0.0
         except: costo_val = 0.0
         
-        # 🛠️ SOLUCIÓN AL PUNTO: Eliminamos puntos de 'FAC.' y normalizamos
         estado_fac_raw = str(row.get('ESTADO_FAC', '')).replace('.', '').strip().upper()
         
         estado = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper() or "SIN ESTADO"
