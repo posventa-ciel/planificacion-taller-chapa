@@ -121,7 +121,8 @@ def obtener_turnos():
     if GID_TURNOS == "PONER_AQUI_GID_TURNOS": return pd.DataFrame(columns=columnas_base)
     try:
         d = pd.read_csv(f"{URL_BASE}{GID_TURNOS}", dtype=str)
-        d.columns = d.columns.str.strip().str.upper()
+        d.columns = [str(c).strip().upper() for c in d.columns]
+        
         if 'PATENTE' in d.columns: d = d.dropna(subset=['PATENTE']); d = d[d['PATENTE'].str.strip() != ""]
         filas = []
         col_chasis = next((c for c in d.columns if 'CHASIS' in c or 'VIN' in c), None)
@@ -151,7 +152,7 @@ def obtener_datos_maestros():
     for n, gid in GIDS.items():
         try:
             d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
-            # Blindaje para evitar errores si la hoja de Excel tiene columnas "fantasmas"
+            # Blindaje para evitar el error de str
             d.columns = [str(c).strip().upper() for c in d.columns]
             
             renames = {}
@@ -185,109 +186,9 @@ def obtener_datos_maestros():
             d['PATENTE'] = d['PATENTE'].replace("", "S/P (Sin Patente)")
             
             d['GRUPO_ORIGEN'] = n
-        except Exception as e:
-            # AHORA EL ERROR SE MUESTRA EN PANTALLA EN ROJO
-            st.error(f"⚠️ Atención: Error leyendo la pestaña {n}: {e}")
-            pass
-            
-    if not dfs: return pd.DataFrame()
-    df_raw = pd.concat(dfs, ignore_index=True)
-    filas = []
-    
-    col_chasis_global = next((c for c in df_raw.columns if 'CHASIS' in c or 'VIN' in c), None)
-    
-    for _, row in df_raw.iterrows():
-        f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
-        f_fin_disp = f_fin.date() if f_fin else None
-        if not f_fin: f_fin = datetime.now() + timedelta(days=3650)
-        
-        mes_hist = f_fin.strftime('%Y-%m') if f_fin.year < 2030 else "SIN FECHA"
-        if row.get('GRUPO_ORIGEN') == 'PARABRISAS':
-            mes_str = str(row.get('MES', '')).strip().lower()
-            if mes_str in MESES_ES:
-                mes_hist = f"{datetime.now().year}-{MESES_ES[mes_str]:02d}"
-
-        f_ingreso = parsear_fecha_español(row.get('FECHA_INGRESO_TALLER', ''))
-        f_ticket = parsear_fecha_español(row.get('FECHA_TICKET', ''))
-        
-        try:
-            t_panos = str(row.get('PAÑOS', '0')).replace(',', '.')
-            if t_panos.lower() == 'nan' or not t_panos.strip(): t_panos = '0'
-            panos = float(re.findall(r"[-+]?\d*\.\d+|\d+", t_panos)[0]) if re.findall(r"[-+]?\d*\.\d+|\d+", t_panos) else 0.0
-        except: panos = 0.0
-        
-        try:
-            t_dias = str(row.get('DIAS_TRABAJO', '0')).replace(',', '.')
-            if t_dias.lower() == 'nan' or not t_dias.strip() or 'VACIA' in t_dias: t_dias = '0'
-            dias_rep = float(re.findall(r"[-+]?\d*\.\d+|\d+", t_dias)[0]) if re.findall(r"[-+]?\d*\.\d+|\d+", t_dias) else 0.0
-        except: dias_rep = 0.0
-
-        precio_raw = str(row.get('PRECIO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
-        try: precio_val = float(precio_raw) if precio_raw else 0.0
-        except: precio_val = 0.0
-        
-        estado = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper() or "SIN ESTADO"
-        cliente = str(row.get('EMPRESA_TALLER', 'PARTICULAR')).replace('nan', '').strip().upper() or "PARTICULAR"
-        asesor = str(row.get('ASESOR', '')).strip().upper()
-        if asesor == 'NAN' or not asesor: asesor = "SIN ASIGNAR"
-        fase = str(row.get('FASE_TALLER', '')).replace('nan', '').strip().upper()
-        if not fase or fase == 'VACIA_20': fase = "SIN FASE ASIGNADA"
-        hora_entrega = str(row.get('HORA_ENTREGA', '')).replace('nan', '').strip()
-        chasis_val = str(row.get(col_chasis_global, '')).strip().upper() if col_chasis_global else ""
-
-        filas.append({
-            'Grupo': row.get('GRUPO_ORIGEN'), 'Asesor': asesor, 'Cliente': cliente,
-            'Patente': str(row.get('PATENTE', '')), 'Vehiculo': str(row.get('VEHICULO', '')), 'Chasis': chasis_val,
-            'Inicio': f_fin - timedelta(days=max(1, int(panos))), 'Fin': f_fin, 'Fecha_Promesa_Disp': f_fin_disp, 
-            'Fecha_Ingreso': f_ingreso.date() if f_ingreso else None, 'Fecha_Ticket': f_ticket.date() if f_ticket else None,
-            'Hora_Entrega': hora_entrega,
-            'Mes_Hist': mes_hist, 'Paños': panos, 'Dias_Reparacion': dias_rep, 'Tipo_ABC': clasificar_abc(panos),
-            'Estado_Fac': str(row.get('ESTADO_FAC', '')).strip().upper(), 
-            'Estado_Taller': estado, 'Fase_Taller': fase, 'Precio': precio_val, 'Observaciones': str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
-        })
-    return pd.DataFrame(filas)
-            
-            # --- NUEVA LÓGICA: BUSCA LAS COLUMNAS POR NOMBRE ---
-    renames = {}
-    for c in d.columns:
-                if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
-                elif 'ESTADO TALLER' in c or 'ESTADOTALLER' in c: renames[c] = 'ESTADO_TALLER'
-                elif 'FASE' in c: renames[c] = 'FASE_TALLER'
-                elif 'COMPAÑIA' in c or 'SEGURO' in c or 'EMPRESA' in c or 'CLIENTE' in c: renames[c] = 'EMPRESA_TALLER'
-                elif 'OBSERVACION' in c: renames[c] = 'OBSERVACIONES_TALLER'
-                elif 'PROMESA' in c: renames[c] = 'FECHA_PROMESA_I'
-                elif 'TICKET' in c: renames[c] = 'FECHA_TICKET'
-                elif 'INGRESO' in c: renames[c] = 'FECHA_INGRESO_TALLER'
-                elif 'HORA' in c: renames[c] = 'HORA_ENTREGA'
-                elif 'PRECIO' in c or 'MONTO' in c: renames[c] = 'PRECIO'
-                elif 'PAÑO' in c or 'PANOS' in c: renames[c] = 'PAÑOS'
-                elif 'PATENTE' in c or 'DOMINIO' in c: renames[c] = 'PATENTE'
-                elif 'VEHICULO' in c or 'AUTO' in c: renames[c] = 'VEHICULO'
-                elif 'ASESOR' in c: renames[c] = 'ASESOR'
-
-    d = d.rename(columns=renames)
-
-            # --- SOLUCIÓN AL ERROR DE PANDAS ---
-    d = d.loc[:, ~d.columns.duplicated()]
-
-            # Asegurar que existan las columnas clave si la hoja está muy vacía
-    for col_req in ['PATENTE', 'PRECIO', 'PAÑOS', 'ESTADO_FAC']:
-                if col_req not in d.columns:
-                    d[col_req] = ""
-
-            # Rescatar filas que tienen plata/paños facturados pero se olvidaron la Patente
-            d['PATENTE'] = d['PATENTE'].fillna("").astype(str).str.strip()
-            d['ESTADO_FAC'] = d['ESTADO_FAC'].fillna("").astype(str).str.strip().str.upper()
-            
-            # Filtro inteligente: Nos quedamos con la fila SI tiene patente O SI tiene un estado de facturación
-            d = d[(d['PATENTE'] != "") | (d['ESTADO_FAC'].isin(['FAC', 'SI']))]
-            
-            # Le ponemos una etiqueta provisoria si la patente está vacía
-            d['PATENTE'] = d['PATENTE'].replace("", "S/P (Sin Patente)")
-            
-            d['GRUPO_ORIGEN'] = n
             dfs.append(d)
         except Exception as e:
+            st.error(f"⚠️ Atención: Error leyendo la pestaña {n}: {e}")
             pass
             
     if not dfs: return pd.DataFrame()
