@@ -265,7 +265,7 @@ def obtener_datos_maestros():
                 elif 'VEHICULO' in c or 'AUTO' in c: renames[c] = 'VEHICULO'
                 elif 'ASESOR' in c: renames[c] = 'ASESOR'
 
-            d = d.rename(columns=renames)
+    d = d.rename(columns=renames)
 
             # --- SOLUCIÓN AL ERROR DE PANDAS ---
             d = d.loc[:, ~d.columns.duplicated()]
