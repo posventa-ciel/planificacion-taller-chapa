@@ -5,12 +5,10 @@ from datetime import datetime, timedelta, date
 import calendar
 import re
 import time
-
 import json
 import gspread
 
 # --- CONEXIÓN A GOOGLE SHEETS (GSPREAD) ---
-# Mantenemos la conexión activa para usarla en toda la app
 try:
     creds_dict = json.loads(st.secrets["google_credentials"])
     gc = gspread.service_account_from_dict(creds_dict)
@@ -43,22 +41,17 @@ st.markdown("""<style>
 # --- ENCABEZADO ---
 st.title("🚀 Sistema de Gestión Taller CENOA - Jujuy")
 
-# --- CONFIGURACIÓN DE GIDS Y VARIABLES ---
+# --- VARIABLES ---
 ID_NUEVO_SHEET = "1yoJk6hD6YianjGHUofs7q-RvEBJOZg51tFMZx-GVxNg"
-URL_BASE = f"https://docs.google.com/spreadsheets/d/{ID_NUEVO_SHEET}/export?format=csv&gid="
-GID_TURNOS = "109364752" 
-
-GIDS = {"GRUPO UNO": "609774337", "GRUPO DOS": "1212138688", "GRUPO TRES": "527300176", "TERCEROS": "431495457", "PARABRISAS": "37356499"}
 MESES_ES = {'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9, 'octubre': 10, 'noviembre': 11, 'diciembre': 12}
 DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 ASESORES_LISTA = ["SIN ASIGNAR", "CESAR OLIVA", "JAVIER GUTIERREZ", "ANDREA MARTINS"]
 CLIENTES_LISTA = ["CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "CIEL USADO", "AUTOSOL", "AUTOSOL SEGURO", "AUTOSOL OKM", "AUTOSOL USADO", "AUTOLUX", "AUTOLUX SEGURO", "AUTOLUX OKM", "AUTOLUX USADO", "PARTICULAR"]
 
 OBJETIVO_MENSUAL_PANOS = 505.0
-
-# --- LÓGICA DE DÍAS HÁBILES ---
 FERIADOS_ARG = [date(datetime.now().year, 3, 24)] 
 
+# --- LÓGICA DE DÍAS HÁBILES ---
 def dias_habiles_del_mes(anio, mes):
     _, ult_dia = calendar.monthrange(anio, mes)
     dias = 0
@@ -85,7 +78,7 @@ def dias_habiles_restantes_mes(anio, mes):
             dias_restantes += 1
     return dias_restantes
 
-# --- FUNCIONES ---
+# --- FUNCIONES DE PARSEO ---
 def parsear_fecha_español(texto):
     if pd.isna(texto) or str(texto).strip() == "": return None 
     texto = str(texto).lower().strip()
@@ -115,15 +108,25 @@ def obtener_proxima_fecha_libre(dias_carga):
             dias_agregados += 1
     return f"{DIAS_SEMANA[fecha.weekday()]} {fecha.strftime('%d/%m')}"
 
+# ==========================================
+# EXTRACCIÓN VIP POR API (GSPREAD)
+# ==========================================
 @st.cache_data(ttl=300)
 def obtener_turnos():
     columnas_base = ['Tipo', 'Fecha', 'Hora', 'Vehiculo', 'Patente', 'Chasis', 'Asesor', 'Precio', 'Paños', 'Observaciones', 'Tiempo_Entrega', 'Cliente', 'Seguro', 'Recibido', 'Fotos', 'Cancelado', 'OR', 'Eliminar']
-    if GID_TURNOS == "PONER_AQUI_GID_TURNOS": return pd.DataFrame(columns=columnas_base)
     try:
-        d = pd.read_csv(f"{URL_BASE}{GID_TURNOS}", dtype=str)
-        d.columns = [str(c).strip().upper() for c in d.columns]
+        creds_dict = json.loads(st.secrets["google_credentials"])
+        gc_cache = gspread.service_account_from_dict(creds_dict)
+        planilla_cache = gc_cache.open_by_key(ID_NUEVO_SHEET)
+        hoja_cache = planilla_cache.worksheet("TURNOS")
         
-        if 'PATENTE' in d.columns: d = d.dropna(subset=['PATENTE']); d = d[d['PATENTE'].str.strip() != ""]
+        datos = hoja_cache.get_all_values()
+        if not datos or len(datos) < 2: return pd.DataFrame(columns=columnas_base)
+        
+        d = pd.DataFrame(datos[1:], columns=datos[0])
+        d.columns = [str(c).strip().upper() for c in d.columns]
+        if 'PATENTE' in d.columns: d = d[d['PATENTE'].str.strip() != ""]
+        
         filas = []
         col_chasis = next((c for c in d.columns if 'CHASIS' in c or 'VIN' in c), None)
         
@@ -144,15 +147,31 @@ def obtener_turnos():
                 'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False
             })
         return pd.DataFrame(filas)
-    except: return pd.DataFrame(columns=columnas_base)
+    except Exception as e:
+        return pd.DataFrame(columns=columnas_base)
 
 @st.cache_data(ttl=300)
 def obtener_datos_maestros():
     dfs = []
-    for n, gid in GIDS.items():
+    try:
+        creds_dict = json.loads(st.secrets["google_credentials"])
+        gc_cache = gspread.service_account_from_dict(creds_dict)
+        planilla_cache = gc_cache.open_by_key(ID_NUEVO_SHEET)
+    except Exception as e:
+        st.error("Error de conexión con la API de Google.")
+        return pd.DataFrame()
+        
+    nombres_hojas = ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES", "TERCEROS", "PARABRISAS"]
+    
+    for n in nombres_hojas:
         try:
-            d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
-            # Blindaje para evitar el error de str
+            hoja_grupo = planilla_cache.worksheet(n)
+            datos = hoja_grupo.get_all_values()
+            
+            if not datos or len(datos) < 2:
+                continue
+                
+            d = pd.DataFrame(datos[1:], columns=datos[0])
             d.columns = [str(c).strip().upper() for c in d.columns]
             
             renames = {}
@@ -188,7 +207,6 @@ def obtener_datos_maestros():
             d['GRUPO_ORIGEN'] = n
             dfs.append(d)
         except Exception as e:
-            st.error(f"⚠️ Atención: Error leyendo la pestaña {n}: {e}")
             pass
             
     if not dfs: return pd.DataFrame()
@@ -257,7 +275,7 @@ if 'entregas_confirmadas' not in st.session_state:
 
 df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v11.copy()
-df_completo = df.copy() # Guardamos copia para el histórico global
+df_completo = df.copy()
 
 hoy = datetime.today()
 hoy_ym = hoy.strftime('%Y-%m')
@@ -268,14 +286,12 @@ with st.sidebar:
     busqueda_global = st.text_input("Dominio o Chasis", placeholder="Ej: AB123CD")
     st.caption("Filtra tablas y muestra un resumen.")
     
-    # 📌 CONTENEDOR RESERVADO PARA RESULTADOS DE BÚSQUEDA (Así queda arriba)
     contenedor_resultados_busqueda = st.container()
     
     st.divider()
 
     st.markdown("### 📅 Filtro Mensual")
     
-    # Obtener meses disponibles de los datos
     meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
     m1 = df[df['Mes_Hist'] != 'SIN FECHA']['Mes_Hist'].dropna().unique().tolist()
     m2 = df_turnos_display['Fecha'].dropna().apply(lambda x: x.strftime('%Y-%m') if pd.notna(x) else None).dropna().unique().tolist()
@@ -311,7 +327,6 @@ with st.sidebar:
 
 # --- APLICAR FILTRO MENSUSAL GLOBAL A MAESTRO ---
 if mes_filtro != "TODOS":
-    # Conservamos los del mes filtrado y los que no tienen fecha (para no romper Kanban/Detenidos)
     df = df[(df['Mes_Hist'] == mes_filtro) | (df['Mes_Hist'] == 'SIN FECHA')]
     año_filtro, mes_num_filtro = map(int, mes_filtro.split('-'))
     DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
@@ -337,7 +352,6 @@ if busqueda_global:
         df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
                                               (df_turnos_display['Chasis'].str.contains(termino, na=False))]
     
-    # 📌 USAMOS EL CONTENEDOR QUE CREAMOS ARRIBA
     with contenedor_resultados_busqueda:
         st.markdown("### 📋 Resumen del Vehículo")
         if not df.empty:
@@ -399,21 +413,19 @@ with tab_turnos:
         st.info("**📅 Asistente de Turnos (Disponibilidad Estimada por Grupo):**\n" + 
                 " | ".join([f"**{g}**: libre desde el {f}" for g, f in recomendaciones_grupos.items()]))
     
-    # --- FILTROS GLOBALES PARA LA PESTAÑA ---
     st.markdown("<h4 style='color: #00235d; margin-top: 10px;'>🔍 Filtros de Visualización (Aplican a Ingresos y Salidas)</h4>", unsafe_allow_html=True)
     col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
     
     with col_fecha:
-        # Defaults basados en el Filtro Mensual Global
         if mes_filtro != "TODOS":
             primer_dia = date(año_filtro, mes_num_filtro, 1)
             _, ult_dia_int = calendar.monthrange(año_filtro, mes_num_filtro)
             ultimo_dia = date(año_filtro, mes_num_filtro, ult_dia_int)
             
             if mes_seleccionado_label == "🗓️ MES ACTUAL":
-                rango_default = (hoy.date(), hoy.date()) # Por defecto mostramos solo HOY
+                rango_default = (hoy.date(), hoy.date())
             else:
-                rango_default = (primer_dia, ultimo_dia) # Mes futuro/pasado muestra todo el mes
+                rango_default = (primer_dia, ultimo_dia)
         else:
             rango_default = (hoy.date(), hoy.date())
             
@@ -462,25 +474,11 @@ with tab_turnos:
                                 fecha_str = f_inicio.strftime('%d/%m/%Y')
                                 
                                 nueva_fila = [
-                                    "NO", # Columna A (NO porque es sin turno)
-                                    fecha_str, # Columna B
-                                    "-", # Columna C (Hora)
-                                    nuevo_vehiculo.upper(), # Columna D
-                                    nueva_patente.upper(), # Columna E
-                                    "", # Columna F (Chasis)
-                                    nuevo_asesor, # Columna G
-                                    nuevo_precio, # Columna H
-                                    nuevo_panos, # Columna I
-                                    nueva_obs, # Columna J
-                                    nuevo_tiempo, # Columna K
-                                    nuevo_cliente, # Columna L
-                                    nuevo_seguro.upper(), # Columna M
-                                    val_recibido, # Columna N (Si)
-                                    val_foto, # Columna O (SI)
-                                    nueva_referencia # Columna P (Referencia)
+                                    "NO", fecha_str, "-", nuevo_vehiculo.upper(), nueva_patente.upper(), "", 
+                                    nuevo_asesor, nuevo_precio, nuevo_panos, nueva_obs, nuevo_tiempo, 
+                                    nuevo_cliente, nuevo_seguro.upper(), val_recibido, val_foto, nueva_referencia
                                 ]
                                 
-                                # Le decimos que arranque a escribir en la columna A sí o sí
                                 hoja.append_row(nueva_fila, table_range="A1")
                                 
                                 nuevo_ingreso = pd.DataFrame([{
@@ -495,13 +493,9 @@ with tab_turnos:
                                 st.success(f"¡Vehículo {nueva_patente.upper()} agregado correctamente a la planilla de Google!")
                                 time.sleep(1.5)
                                 st.rerun()
-                                
-                            except Exception as e:
-                                st.error(f"Error al guardar en Google Sheets: {e}")
-                        else:
-                            st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
-                    else: 
-                        st.error("Por favor completa la Patente y el Vehículo.")
+                            except Exception as e: st.error(f"Error al guardar en Google Sheets: {e}")
+                        else: st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
+                    else: st.error("Por favor completa la Patente y el Vehículo.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -540,7 +534,7 @@ with tab_turnos:
 
                 if st.button("💾 Guardar Ingresos"):
                     with st.spinner("Conectando con Google Sheets y buscando filas..."):
-                        patentes_sheet = hoja.col_values(5) if hoja else [] # Trae todas las patentes (Columna E)
+                        patentes_sheet = hoja.col_values(5) if hoja else []
                         indices_a_borrar = []
                         
                         if not edited_prog.empty:
@@ -609,7 +603,6 @@ with tab_turnos:
             df_no_entregados = df_no_entregados[~df_no_entregados['Patente'].isin(st.session_state.entregas_confirmadas)]
             df_no_entregados['Entregado_OK'] = False
             
-            # FILTROS DE RANGO Y ASESOR
             entregas_rango = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'] >= f_inicio) & (df_no_entregados['Fecha_Promesa_Disp'] <= f_fin)].copy()
             entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy.date())].copy()
             
@@ -620,7 +613,7 @@ with tab_turnos:
             edit_rango_df = pd.DataFrame() 
             edit_atra = pd.DataFrame()
             
-            # --- 1. ATRASADAS (ARRIBA, ANCHO COMPLETO) ---
+            # --- 1. ATRASADAS ---
             st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
             if not entregas_atrasadas.empty:
                 entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
@@ -646,7 +639,7 @@ with tab_turnos:
                 
             st.divider()
             
-            # --- 2. PROGRAMADAS (ABAJO, EN COLUMNAS) ---
+            # --- 2. PROGRAMADAS ---
             if f_inicio == f_fin:
                 titulo_rango = f"HOY ({f_inicio.strftime('%d/%m')})" if f_inicio == hoy.date() else f"para el {f_inicio.strftime('%d/%m')}"
             else:
