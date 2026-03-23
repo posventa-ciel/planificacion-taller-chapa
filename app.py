@@ -185,7 +185,6 @@ def obtener_datos_maestros():
             d['PATENTE'] = d['PATENTE'].replace("", "S/P (Sin Patente)")
             
             d['GRUPO_ORIGEN'] = n
-            dfs.append(d)
         except Exception as e:
             # AHORA EL ERROR SE MUESTRA EN PANTALLA EN ROJO
             st.error(f"⚠️ Atención: Error leyendo la pestaña {n}: {e}")
