@@ -124,12 +124,26 @@ def obtener_turnos():
         filas = []
         col_chasis = next((c for c in d.columns if 'CHASIS' in c or 'VIN' in c), None)
         
+        # 🚨 SOLUCIÓN TURNOS: Buscamos las columnas reales de Recibido, Fotos y OR
+        col_recibido = next((c for c in d.columns if 'RECIBID' in c), None)
+        col_fotos = next((c for c in d.columns if 'FOTO' in c), None)
+        col_or = next((c for c in d.columns if 'OR' == c or 'REFERENCIA' in c), None)
+        
         for _, row in d.iterrows():
             col_fecha = next((c for c in d.columns if 'FECH' in c), None)
             fecha_turno = parsear_fecha_español(row.get(col_fecha, '')) or datetime.now()
             asesor_raw = str(row.get('ASESOR', 'SIN ASIGNAR')).strip().upper()
             if asesor_raw not in ASESORES_LISTA: asesor_raw = "SIN ASIGNAR"
             col_tiempo = next((c for c in d.columns if 'TIEMPO' in c), None)
+            
+            # Leemos los valores reales de la planilla de Google
+            val_recibido = str(row.get(col_recibido, '')).strip().upper() if col_recibido else ""
+            bool_recibido = val_recibido in ['SI', 'SÍ', 'TRUE', '1']
+            
+            val_fotos = str(row.get(col_fotos, '')).strip().upper() if col_fotos else ""
+            bool_fotos = val_fotos in ['SI', 'SÍ', 'TRUE', '1']
+            
+            val_or = str(row.get(col_or, '')).strip() if col_or else ""
             
             filas.append({
                 'Tipo': '📅 PROGRAMADO', 'Fecha': fecha_turno.date(), 'Hora': str(row.get('HORAS', '')).strip(),
@@ -138,7 +152,7 @@ def obtener_turnos():
                 'Asesor': asesor_raw, 'Precio': str(row.get('PRECIO', '')).strip(), 'Paños': str(row.get('PAÑOS', '')).strip(),
                 'Observaciones': str(row.get('OBSERVACIONES', '')).strip(), 'Tiempo_Entrega': str(row.get(col_tiempo, '')) if col_tiempo else "",
                 'Cliente': str(row.get('CLIENTE', '')).upper(), 'Seguro': str(row.get('SEGURO', '')).upper(),
-                'Recibido': False, 'Fotos': False, 'Cancelado': False, 'OR': "", 'Eliminar': False
+                'Recibido': bool_recibido, 'Fotos': bool_fotos, 'Cancelado': False, 'OR': val_or, 'Eliminar': False
             })
         return pd.DataFrame(filas)
     except: return pd.DataFrame(columns=columnas_base)
@@ -153,7 +167,7 @@ def obtener_datos_maestros():
             idx_header = 0
             for i in range(min(15, len(d_raw))):
                 fila_str = " ".join(d_raw.iloc[i].fillna("").astype(str).str.upper())
-                if 'ESTADO' in fila_str or 'DOMINIO' in fila_str or 'PATENTE' in fila_str or 'CLIENTE' in fila_str or 'COMPAÑIA' in fila_str or 'PRECIO' in fila_str:
+                if 'ESTADO' in fila_str or 'DOMINIO' in fila_str or 'PATENTE' in fila_str or 'CLIENTE' in fila_str or 'COMPAÑIA' in fila_str or 'PRECIO' in fila_str or 'MANO DE OBRA' in fila_str:
                     idx_header = i
                     break
                     
@@ -196,10 +210,11 @@ def obtener_datos_maestros():
                     elif 'INGRESO' in c_str or c_str == 'FECHA': renames[c] = 'FECHA_INGRESO_TALLER'
                     elif 'HORA' in c_str: renames[c] = 'HORA_ENTREGA'
                     elif 'DOMINIO' in c_str or 'PATENTE' in c_str: renames[c] = 'PATENTE'
-                    elif 'PRECIO' in c_str or 'MONTO' in c_str or 'TOTAL' in c_str: 
-                        if 'PRECIO' not in renames.values(): renames[c] = 'PRECIO' # Solo la primera vez
-                    elif 'COSTO' in c_str: 
-                        if 'COSTO' not in renames.values(): renames[c] = 'COSTO' # Solo la primera vez
+                    # 🚨 SOLUCIÓN PARABRISAS/TERCEROS: Agregamos las palabras que usan ustedes para facturar
+                    elif 'PRECIO' in c_str or 'MONTO' in c_str or 'TOTAL' in c_str or 'FRANQUICIA' in c_str or 'MANO DE OBRA' in c_str: 
+                        if 'PRECIO' not in renames.values(): renames[c] = 'PRECIO'
+                    elif 'COSTO' in c_str or 'REPUESTO' in c_str: 
+                        if 'COSTO' not in renames.values(): renames[c] = 'COSTO' 
                     elif 'TERCERO' in c_str: renames[c] = 'ASESOR'
                     elif 'MES' in c_str: renames[c] = 'MES'
                     elif 'MARCA' in c_str or 'VEHICULO' in c_str: renames[c] = 'VEHICULO'
@@ -208,7 +223,6 @@ def obtener_datos_maestros():
                 if 'MES' in d.columns:
                     d['MES'] = d['MES'].replace(r'^\s*$', pd.NA, regex=True).ffill()
 
-            # 🛡️ ESCUDO ANTI-DUPLICADOS: Borra cualquier columna repetida generada accidentalmente
             d = d.loc[:, ~d.columns.duplicated()]
 
             if 'PATENTE' in d.columns: 
