@@ -268,7 +268,7 @@ def obtener_datos_maestros():
     d = d.rename(columns=renames)
 
             # --- SOLUCIÓN AL ERROR DE PANDAS ---
-            d = d.loc[:, ~d.columns.duplicated()]
+    d = d.loc[:, ~d.columns.duplicated()]
 
             # Asegurar que existan las columnas clave si la hoja está muy vacía
             for col_req in ['PATENTE', 'PRECIO', 'PAÑOS', 'ESTADO_FAC']:
