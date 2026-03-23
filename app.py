@@ -249,8 +249,8 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
             
             # --- NUEVA LÓGICA: BUSCA LAS COLUMNAS POR NOMBRE ---
-            renames = {}
-            for c in d.columns:
+    renames = {}
+    for c in d.columns:
                 if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
                 elif 'ESTADO TALLER' in c or 'ESTADOTALLER' in c: renames[c] = 'ESTADO_TALLER'
                 elif 'FASE' in c: renames[c] = 'FASE_TALLER'
