@@ -124,7 +124,6 @@ def obtener_turnos():
         filas = []
         col_chasis = next((c for c in d.columns if 'CHASIS' in c or 'VIN' in c), None)
         
-        # 🚨 SOLUCIÓN TURNOS: Buscamos las columnas reales de Recibido, Fotos y OR
         col_recibido = next((c for c in d.columns if 'RECIBID' in c), None)
         col_fotos = next((c for c in d.columns if 'FOTO' in c), None)
         col_or = next((c for c in d.columns if 'OR' == c or 'REFERENCIA' in c), None)
@@ -136,7 +135,6 @@ def obtener_turnos():
             if asesor_raw not in ASESORES_LISTA: asesor_raw = "SIN ASIGNAR"
             col_tiempo = next((c for c in d.columns if 'TIEMPO' in c), None)
             
-            # Leemos los valores reales de la planilla de Google
             val_recibido = str(row.get(col_recibido, '')).strip().upper() if col_recibido else ""
             bool_recibido = val_recibido in ['SI', 'SÍ', 'TRUE', '1']
             
@@ -200,7 +198,6 @@ def obtener_datos_maestros():
                 renames = {}
                 for c in d.columns:
                     c_str = str(c).upper().strip()
-                    # 🚨 SOLUCIÓN TERCEROS/PARABRISAS: Atrapar columna "FAC" y "fac" literalmente
                     if 'ESTADO FAC' in c_str or 'ESTADOFAC' in c_str or c_str == 'FAC': 
                         renames[c] = 'ESTADO_FAC'
                     elif 'ESTADO TALLER' in c_str or 'ESTADOTALLER' in c_str or c_str == 'ESTADO': 
@@ -211,7 +208,6 @@ def obtener_datos_maestros():
                         if 'EMPRESA_TALLER' not in renames.values(): renames[c] = 'EMPRESA_TALLER'
                     elif 'OBSERVACION' in c_str: 
                         renames[c] = 'OBSERVACIONES_TALLER'
-                    # 🚨 Corregimos FECH/PROM que no dice promesa
                     elif 'PROMESA' in c_str or 'FECH/PROM' in c_str: 
                         renames[c] = 'FECHA_PROMESA_I'
                     elif 'TICKET' in c_str: 
@@ -226,15 +222,12 @@ def obtener_datos_maestros():
                         if 'PRECIO' not in renames.values(): renames[c] = 'PRECIO' 
                     elif 'COSTO' in c_str or 'REPUESTO' in c_str: 
                         if 'COSTO' not in renames.values(): renames[c] = 'COSTO'
-                    # 🚨 Agarramos Asesor que antes decía Tercero, o literalmente Asesor
                     elif 'TERCERO' in c_str or 'ASESOR' in c_str: 
                         if 'ASESOR' not in renames.values(): renames[c] = 'ASESOR'
                     elif c_str == 'MES': 
                         renames[c] = 'MES'
-                    # 🚨 Corregimos VEHICILO (error de tipeo en Parabrisas)
                     elif 'MARCA' in c_str or 'VEHIC' in c_str: 
                         renames[c] = 'VEHICULO'
-                    # 🚨 Nos aseguramos que paños se mapee si o si
                     elif 'PAÑO' in c_str:
                         if 'PAÑOS' not in renames.values(): renames[c] = 'PAÑOS'
 
@@ -1107,7 +1100,6 @@ with tab_fac:
                 df_res = pd.DataFrame(index=pivot.index)
                 df_res['📦 FAC'] = pivot[('Paños', 'Facturado (FAC)')]
                 df_res['📦 SI'] = pivot[('Paños', 'Aprobado (SI)')]
-                df_res['📦 EST. CIERRE (FAC+SI)'] = df_res['📦 FAC'] + df_res['📦 OTROS (En Taller)'] * 0 # Solo FAC y SI
                 df_res['📦 EST. CIERRE (FAC+SI)'] = df_res['📦 FAC'] + df_res['📦 SI']
                 df_res['📦 OTROS (En Taller)'] = pivot[('Paños', 'En Taller (Otros)')]
                 df_res['💰 FAC'] = pivot[('Precio', 'Facturado (FAC)')]
