@@ -271,7 +271,7 @@ def obtener_datos_maestros():
     d = d.loc[:, ~d.columns.duplicated()]
 
             # Asegurar que existan las columnas clave si la hoja está muy vacía
-            for col_req in ['PATENTE', 'PRECIO', 'PAÑOS', 'ESTADO_FAC']:
+    for col_req in ['PATENTE', 'PRECIO', 'PAÑOS', 'ESTADO_FAC']:
                 if col_req not in d.columns:
                     d[col_req] = ""
 
