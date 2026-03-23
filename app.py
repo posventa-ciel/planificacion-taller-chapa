@@ -148,12 +148,36 @@ def obtener_datos_maestros():
     dfs = []
     for n, gid in GIDS.items():
         try:
-            d = pd.read_csv(f"{URL_BASE}{gid}", dtype=str)
-            d.columns = d.columns.str.strip().str.upper()
+            # 🛠️ MAGIA NUEVA: AUTO-DETECTOR DE ENCABEZADOS
+            # Leemos las filas a ciegas sin asumir nada
+            d_raw = pd.read_csv(f"{URL_BASE}{gid}", dtype=str, header=None)
             
-            if n != "PARABRISAS":
+            # Buscamos en las primeras 15 filas dónde están realmente los nombres de las columnas
+            idx_header = 0
+            for i in range(min(15, len(d_raw))):
+                fila_str = " ".join(d_raw.iloc[i].fillna("").astype(str).str.upper())
+                # Palabras clave que indican que ESTA es la fila de títulos
+                if 'ESTADO' in fila_str or 'DOMINIO' in fila_str or 'PATENTE' in fila_str or 'CLIENTE' in fila_str or 'COMPAÑIA' in fila_str or 'PRECIO' in fila_str:
+                    idx_header = i
+                    break
+                    
+            # Set columns to this row and rename empty columns safely
+            cols = []
+            for j, val in enumerate(d_raw.iloc[idx_header]):
+                val_str = str(val).strip().upper()
+                if val_str == 'NAN' or val_str == 'NONE' or not val_str:
+                    cols.append(f"VACIA_{j}")
+                else:
+                    cols.append(val_str)
+                    
+            d_raw.columns = cols
+            # Cortamos el dataframe para ignorar los títulos grandes de arriba
+            d = d_raw.iloc[idx_header + 1:].reset_index(drop=True)
+
+            # A partir de acá, la lógica fluye perfecta porque ya tenemos las columnas limpias
+            if n in ["GRUPO UNO", "GRUPO DOS", "GRUPO TRES"]:
                 cols = list(d.columns)
-                while len(cols) < 22: cols.append(f"VACIA_{len(cols)}")
+                while len(cols) < 22: cols.append(f"VACIA_EXTRA_{len(cols)}")
                 if len(cols) > 21: cols[21] = 'ESTADO_FAC'            
                 if len(cols) > 20: cols[20] = 'FASE_TALLER'            
                 if len(cols) > 19: cols[19] = 'ESTADO_TALLER'         
@@ -165,31 +189,39 @@ def obtener_datos_maestros():
                 if len(cols) > 6: cols[6] = 'DIAS_TRABAJO'            
                 if len(cols) > 0: cols[0] = 'FECHA_INGRESO_TALLER'    
                 d.columns = cols
-            else:
+            else: # PARABRISAS y TERCEROS
                 renames = {}
                 for c in d.columns:
-                    if 'ESTADO FAC' in c or 'ESTADOFAC' in c: renames[c] = 'ESTADO_FAC'
-                    elif 'ESTADO TALLER' in c or 'ESTADOTALLER' in c: renames[c] = 'ESTADO_TALLER'
-                    elif 'FASE' in c: renames[c] = 'FASE_TALLER'
-                    elif 'COMPAÑIA' in c or 'SEGURO' in c or 'EMPRESA' in c: renames[c] = 'EMPRESA_TALLER'
-                    elif 'OBSERVACION' in c: renames[c] = 'OBSERVACIONES_TALLER'
-                    elif 'PROMESA' in c: renames[c] = 'FECHA_PROMESA_I'
-                    elif 'TICKET' in c: renames[c] = 'FECHA_TICKET'
-                    elif 'INGRESO' in c: renames[c] = 'FECHA_INGRESO_TALLER'
-                    elif 'HORA' in c: renames[c] = 'HORA_ENTREGA'
+                    c_str = str(c).upper().strip()
+                    if 'ESTADO FAC' in c_str or 'ESTADOFAC' in c_str: renames[c] = 'ESTADO_FAC'
+                    elif 'ESTADO TALLER' in c_str or 'ESTADOTALLER' in c_str or c_str == 'ESTADO': renames[c] = 'ESTADO_TALLER'
+                    elif 'FASE' in c_str: renames[c] = 'FASE_TALLER'
+                    elif 'COMPAÑIA' in c_str or 'SEGURO' in c_str or 'EMPRESA' in c_str or 'CLIENTE' in c_str: renames[c] = 'EMPRESA_TALLER'
+                    elif 'OBSERVACION' in c_str: renames[c] = 'OBSERVACIONES_TALLER'
+                    elif 'PROMESA' in c_str: renames[c] = 'FECHA_PROMESA_I'
+                    elif 'TICKET' in c_str: renames[c] = 'FECHA_TICKET'
+                    elif 'INGRESO' in c_str or c_str == 'FECHA': renames[c] = 'FECHA_INGRESO_TALLER'
+                    elif 'HORA' in c_str: renames[c] = 'HORA_ENTREGA'
+                    elif 'DOMINIO' in c_str or 'PATENTE' in c_str: renames[c] = 'PATENTE'
+                    elif 'PRECIO' in c_str or 'MONTO' in c_str or 'TOTAL' in c_str: renames[c] = 'PRECIO'
+                    elif 'COSTO' in c_str: renames[c] = 'COSTO'
+                    elif 'TERCERO' in c_str: renames[c] = 'ASESOR'
+                    elif 'MES' in c_str: renames[c] = 'MES'
+                    elif 'MARCA' in c_str or 'VEHICULO' in c_str: renames[c] = 'VEHICULO'
                 d = d.rename(columns=renames)
-
-            # --- BUSCAMOS LA COLUMNA DE COSTO PARA TERCEROS Y DEMÁS ---
-            col_costo = next((c for c in d.columns if 'COSTO' in c), None)
-            if col_costo:
-                d = d.rename(columns={col_costo: 'COSTO'})
+                
+                # Resuelve el problema de la celda combinada de MES
+                if 'MES' in d.columns:
+                    d['MES'] = d['MES'].replace(r'^\s*$', pd.NA, regex=True).ffill()
 
             if 'PATENTE' in d.columns: 
                 d = d.dropna(subset=['PATENTE'])
                 d = d[d['PATENTE'].str.strip() != ""]
                 d['GRUPO_ORIGEN'] = n
                 dfs.append(d)
-        except: pass
+        except Exception as e: 
+            print(f"Error en pestaña {n}: {e}")
+            pass
         
     if not dfs: return pd.DataFrame()
     df_raw = pd.concat(dfs, ignore_index=True)
@@ -200,13 +232,15 @@ def obtener_datos_maestros():
     for _, row in df_raw.iterrows():
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         f_fin_disp = f_fin.date() if f_fin else None
-        if not f_fin: f_fin = datetime.now() + timedelta(days=3650)
+        if not f_fin: f_fin = datetime.now() + timedelta(days=3650) # Año 2036
         
         mes_hist = f_fin.strftime('%Y-%m') if f_fin.year < 2030 else "SIN FECHA"
-        if row.get('GRUPO_ORIGEN') == 'PARABRISAS':
+        if row.get('GRUPO_ORIGEN') in ['PARABRISAS', 'TERCEROS']:
             mes_str = str(row.get('MES', '')).strip().lower()
-            if mes_str in MESES_ES:
-                mes_hist = f"{datetime.now().year}-{MESES_ES[mes_str]:02d}"
+            for m_name, m_num in MESES_ES.items():
+                if m_name in mes_str:
+                    mes_hist = f"{datetime.now().year}-{m_num:02d}"
+                    break
 
         f_ingreso = parsear_fecha_español(row.get('FECHA_INGRESO_TALLER', ''))
         f_ticket = parsear_fecha_español(row.get('FECHA_TICKET', ''))
@@ -227,10 +261,12 @@ def obtener_datos_maestros():
         try: precio_val = float(precio_raw) if precio_raw else 0.0
         except: precio_val = 0.0
 
-        # --- EXTRACCIÓN DEL COSTO ---
         costo_raw = str(row.get('COSTO', '0')).replace('$', '').replace('.', '').replace(',', '.').strip()
         try: costo_val = float(costo_raw) if costo_raw else 0.0
         except: costo_val = 0.0
+        
+        # Resuelve el problema del punto final en "FAC."
+        estado_fac_raw = str(row.get('ESTADO_FAC', '')).replace('.', '').strip().upper()
         
         estado = str(row.get('ESTADO_TALLER', '')).replace('nan', '').strip().upper() or "SIN ESTADO"
         cliente = str(row.get('EMPRESA_TALLER', 'PARTICULAR')).replace('nan', '').strip().upper() or "PARTICULAR"
@@ -248,9 +284,9 @@ def obtener_datos_maestros():
             'Fecha_Ingreso': f_ingreso.date() if f_ingreso else None, 'Fecha_Ticket': f_ticket.date() if f_ticket else None,
             'Hora_Entrega': hora_entrega,
             'Mes_Hist': mes_hist, 'Paños': panos, 'Dias_Reparacion': dias_rep, 'Tipo_ABC': clasificar_abc(panos),
-            'Estado_Fac': str(row.get('ESTADO_FAC', '')).strip().upper(), 
+            'Estado_Fac': estado_fac_raw, 
             'Estado_Taller': estado, 'Fase_Taller': fase, 
-            'Precio': precio_val, 'Costo': costo_val, # Guardamos el precio y el costo
+            'Precio': precio_val, 'Costo': costo_val,
             'Observaciones': str(row.get('OBSERVACIONES_TALLER', '')).replace('nan', '').strip()
         })
     return pd.DataFrame(filas)
@@ -264,7 +300,7 @@ if 'entregas_confirmadas' not in st.session_state:
 
 df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v11.copy()
-df_completo = df.copy() # Guardamos copia para el histórico global
+df_completo = df.copy() 
 
 hoy = datetime.today()
 hoy_ym = hoy.strftime('%Y-%m')
@@ -275,14 +311,12 @@ with st.sidebar:
     busqueda_global = st.text_input("Dominio o Chasis", placeholder="Ej: AB123CD")
     st.caption("Filtra tablas y muestra un resumen.")
     
-    # 📌 CONTENEDOR RESERVADO PARA RESULTADOS DE BÚSQUEDA (Así queda arriba)
     contenedor_resultados_busqueda = st.container()
     
     st.divider()
 
     st.markdown("### 📅 Filtro Mensual")
     
-    # Obtener meses disponibles de los datos
     meses_nombres = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
     m1 = df[df['Mes_Hist'] != 'SIN FECHA']['Mes_Hist'].dropna().unique().tolist()
     m2 = df_turnos_display['Fecha'].dropna().apply(lambda x: x.strftime('%Y-%m') if pd.notna(x) else None).dropna().unique().tolist()
@@ -318,7 +352,6 @@ with st.sidebar:
 
 # --- APLICAR FILTRO MENSUSAL GLOBAL A MAESTRO ---
 if mes_filtro != "TODOS":
-    # Conservamos los del mes filtrado y los que no tienen fecha (para no romper Kanban/Detenidos)
     df = df[(df['Mes_Hist'] == mes_filtro) | (df['Mes_Hist'] == 'SIN FECHA')]
     año_filtro, mes_num_filtro = map(int, mes_filtro.split('-'))
     DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
@@ -344,7 +377,6 @@ if busqueda_global:
         df_turnos_display = df_turnos_display[(df_turnos_display['Patente'].str.contains(termino, na=False)) | 
                                               (df_turnos_display['Chasis'].str.contains(termino, na=False))]
     
-    # 📌 USAMOS EL CONTENEDOR QUE CREAMOS ARRIBA
     with contenedor_resultados_busqueda:
         st.markdown("### 📋 Resumen del Vehículo")
         if not df.empty:
@@ -406,21 +438,19 @@ with tab_turnos:
         st.info("**📅 Asistente de Turnos (Disponibilidad Estimada por Grupo):**\n" + 
                 " | ".join([f"**{g}**: libre desde el {f}" for g, f in recomendaciones_grupos.items()]))
     
-    # --- FILTROS GLOBALES PARA LA PESTAÑA ---
     st.markdown("<h4 style='color: #00235d; margin-top: 10px;'>🔍 Filtros de Visualización (Aplican a Ingresos y Salidas)</h4>", unsafe_allow_html=True)
     col_fecha, col_asesor, col_add = st.columns([1, 1, 2])
     
     with col_fecha:
-        # Defaults basados en el Filtro Mensual Global
         if mes_filtro != "TODOS":
             primer_dia = date(año_filtro, mes_num_filtro, 1)
             _, ult_dia_int = calendar.monthrange(año_filtro, mes_num_filtro)
             ultimo_dia = date(año_filtro, mes_num_filtro, ult_dia_int)
             
             if mes_seleccionado_label == "🗓️ MES ACTUAL":
-                rango_default = (hoy.date(), hoy.date()) # Por defecto mostramos solo HOY
+                rango_default = (hoy.date(), hoy.date()) 
             else:
-                rango_default = (primer_dia, ultimo_dia) # Mes futuro/pasado muestra todo el mes
+                rango_default = (primer_dia, ultimo_dia) 
         else:
             rango_default = (hoy.date(), hoy.date())
             
@@ -464,38 +494,18 @@ with tab_turnos:
                     if nueva_patente and nuevo_vehiculo:
                         if hoja is not None:
                             try:
-                                # 1. Adaptar los booleanos a Si / SI como pediste
                                 val_recibido = "Si" if val_recibido_bool else ""
                                 val_foto = "SI" if val_foto_bool else ""
                                 fecha_str = f_inicio.strftime('%d/%m/%Y')
                                 
-                                # 2. Construir la lista de 16 elementos (Columnas A hasta P)
-                                # A=Tipo, B=Fecha, C=Hora, D=Vehiculo, E=Patente, F=Chasis, G=Asesor, 
-                                # H=Precio, I=Paños, J=Observaciones, K=Tiempo_Entrega, L=Cliente, M=Seguro, 
-                                # N=Recibido, O=Fotos, P=OR
                                 nueva_fila = [
-                                    "NO", # Columna A (NO porque es sin turno)
-                                    fecha_str, # Columna B
-                                    "-", # Columna C (Hora)
-                                    nuevo_vehiculo.upper(), # Columna D
-                                    nueva_patente.upper(), # Columna E
-                                    "", # Columna F (Chasis)
-                                    nuevo_asesor, # Columna G
-                                    nuevo_precio, # Columna H
-                                    nuevo_panos, # Columna I
-                                    nueva_obs, # Columna J
-                                    nuevo_tiempo, # Columna K
-                                    nuevo_cliente, # Columna L
-                                    nuevo_seguro.upper(), # Columna M
-                                    val_recibido, # Columna N (Si)
-                                    val_foto, # Columna O (SI)
-                                    nueva_referencia # Columna P (Referencia)
+                                    "NO", fecha_str, "-", nuevo_vehiculo.upper(), nueva_patente.upper(), "", 
+                                    nuevo_asesor, nuevo_precio, nuevo_panos, nueva_obs, nuevo_tiempo, 
+                                    nuevo_cliente, nuevo_seguro.upper(), val_recibido, val_foto, nueva_referencia
                                 ]
                                 
-                                # 3. Mandar el robot a escribir al Excel
                                 hoja.append_row(nueva_fila)
                                 
-                                # 4. Actualizar la memoria de Streamlit para que aparezca al toque en pantalla
                                 nuevo_ingreso = pd.DataFrame([{
                                     'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 
                                     'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 
@@ -518,7 +528,6 @@ with tab_turnos:
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # --- CAJA 1: INGRESOS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #00235d; margin-top: 0;'>📥 1. INGRESOS: Recepción de Vehículos</h2>", unsafe_allow_html=True)
         st.write("Administración de turnos y vehículos programados para **entrar** al taller en las fechas seleccionadas.")
@@ -553,13 +562,12 @@ with tab_turnos:
 
                 if st.button("💾 Guardar Ingresos"):
                     with st.spinner("Conectando con Google Sheets y buscando filas..."):
-                        patentes_sheet = hoja.col_values(5) if hoja else [] # Trae todas las patentes (Columna E)
+                        patentes_sheet = hoja.col_values(5) if hoja else []
                         indices_a_borrar = []
                         
                         if not edited_prog.empty:
                             for idx, row in edited_prog.iterrows():
                                 row_orig = df_prog.loc[idx]
-                                # Chequeamos si hubo cambios para no saturar a Google
                                 if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor']):
                                     st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
                                     
@@ -569,7 +577,7 @@ with tab_turnos:
                                             hoja.update_acell(f'N{fila_sheet}', "Si" if row['Recibido'] else "")
                                             hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
                                             hoja.update_acell(f'P{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
-                                            hoja.update_acell(f'G{fila_sheet}', row['Asesor']) # Por si cambiaron de asesor
+                                            hoja.update_acell(f'G{fila_sheet}', row['Asesor'])
                                         except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
                                         
                         if not edited_sin.empty:
@@ -611,7 +619,6 @@ with tab_turnos:
                                     except: pass
                         st.success("Correcciones aplicadas y guardadas."); time.sleep(1.5); st.rerun()
 
-    # --- CAJA 2: SALIDAS ---
     with st.container(border=True):
         st.markdown("<h2 style='color: #1e7e34; margin-top: 0;'>📤 2. SALIDAS: Agenda de Entregas</h2>", unsafe_allow_html=True)
         st.write("Vehículos listos para entregar al cliente en las fechas seleccionadas.")
@@ -621,7 +628,6 @@ with tab_turnos:
             df_no_entregados = df_no_entregados[~df_no_entregados['Patente'].isin(st.session_state.entregas_confirmadas)]
             df_no_entregados['Entregado_OK'] = False
             
-            # FILTROS DE RANGO Y ASESOR
             entregas_rango = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'] >= f_inicio) & (df_no_entregados['Fecha_Promesa_Disp'] <= f_fin)].copy()
             entregas_atrasadas = df_no_entregados[(df_no_entregados['Fecha_Promesa_Disp'].notna()) & (df_no_entregados['Fecha_Promesa_Disp'] < hoy.date())].copy()
             
@@ -632,7 +638,6 @@ with tab_turnos:
             edit_rango_df = pd.DataFrame() 
             edit_atra = pd.DataFrame()
             
-            # --- 1. ATRASADAS (ARRIBA, ANCHO COMPLETO) ---
             st.markdown("#### 🔴 Entregas Atrasadas (Vencidas)")
             if not entregas_atrasadas.empty:
                 entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
@@ -658,7 +663,6 @@ with tab_turnos:
                 
             st.divider()
             
-            # --- 2. PROGRAMADAS (ABAJO, EN COLUMNAS) ---
             if f_inicio == f_fin:
                 titulo_rango = f"HOY ({f_inicio.strftime('%d/%m')})" if f_inicio == hoy.date() else f"para el {f_inicio.strftime('%d/%m')}"
             else:
@@ -730,7 +734,6 @@ with tab_prog:
 
         df_en_proceso = df_prog_filtrado[df_prog_filtrado['Estado_Taller'].str.contains("PROCESO", na=False)]
         
-        # --- 1. TERMÓMETRO ---
         st.markdown(f"### 🚥 Termómetro de Capacidad (Mes de {DIAS_HABILES_MES} días hábiles)")
         st.write(f"Calculado en base a los **Paños Activos** divididos por la capacidad teórica de producción ({CAPACIDAD_DIARIA_GRUPO:.1f} paños/día por grupo). No incluye vehículos detenidos.")
         
@@ -764,7 +767,6 @@ with tab_prog:
 
         st.divider()
 
-        # --- 2. TABLAS POR ESTADO ---
         st.markdown("## 📑 Listado de Vehículos en Taller (Prioridad por Fecha Promesa)")
         st.write("Columnas actuales: Fechas clave, Vehículo, Asesor, Paños, Monto Pendiente (sólo en terminados) y Observaciones.")
         estados_map = [("⏳ EN PROCESO", "PROCESO"), ("⛔ DETENIDOS", "DETENIDO"), ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), ("🚚 ENTREGADOS", "ENTREGADO")]
@@ -812,7 +814,6 @@ with tab_prog:
         
         st.divider()
 
-        # --- 3. KANBAN ---
         st.markdown("### 📋 Tablero Kanban de Producción (Separado por Sector)")
         st.write("Los vehículos fluyen de izquierda a derecha. **Prioridad por colores:** 🟢 Con tiempo | 🟡 Entrega HOY | 🔴 Atrasado | ⚪ Detenido.")
         
@@ -888,7 +889,6 @@ with tab_prog:
 
         st.divider()
         
-        # --- 4. ABC TOYOTA ---
         st.markdown("### 📊 Análisis de Carga por Método Toyota (ABC)")
         if not df_en_proceso.empty:
             c_abc1, c_abc2 = st.columns([1, 2])
@@ -1146,10 +1146,10 @@ with tab_fac:
                     res_empresa_pie = df_cierre.groupby('Cliente')[['Precio']].sum().reset_index()
                     st.plotly_chart(px.pie(res_empresa_pie, values='Precio', names='Cliente', hole=0.4, title="Participación en el Cierre Estimado ($)"), use_container_width=True)
 
-        # --- GESTIÓN DE TERCEROS ---
+        # --- GESTIÓN DE TERCEROS Y PARABRISAS ---
         st.divider()
-        st.markdown("### 🤝 Gestión Financiera de Terceros")
-        df_terceros = df_analisis[(df_analisis['Grupo'] == 'TERCEROS') & (df_analisis['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
+        st.markdown("### 🤝 Gestión Financiera de Terceros y Parabrisas")
+        df_terceros = df_analisis[(df_analisis['Grupo'].isin(['TERCEROS', 'PARABRISAS'])) & (df_analisis['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
         
         if not df_terceros.empty:
             tot_ter_fac = df_terceros['Precio'].sum()
@@ -1158,12 +1158,12 @@ with tab_fac:
             tot_ter_panos = df_terceros['Paños'].sum()
             
             c_t1, c_t2, c_t3, c_t4 = st.columns(4)
-            c_t1.markdown(f'<div class="metric-card"><div class="metric-title">Total Terceros (Venta)</div><div class="metric-value-money" style="font-size: 1.5rem;">${tot_ter_fac:,.0f}</div></div>', unsafe_allow_html=True)
-            c_t2.markdown(f'<div class="metric-card"><div class="metric-title">Costo Terceros</div><div class="metric-value-money" style="color:#dc3545; font-size: 1.5rem;">${tot_ter_costo:,.0f}</div></div>', unsafe_allow_html=True)
+            c_t1.markdown(f'<div class="metric-card"><div class="metric-title">Total Venta (Terceros + Parabrisas)</div><div class="metric-value-money" style="font-size: 1.5rem;">${tot_ter_fac:,.0f}</div></div>', unsafe_allow_html=True)
+            c_t2.markdown(f'<div class="metric-card"><div class="metric-title">Costo Total</div><div class="metric-value-money" style="color:#dc3545; font-size: 1.5rem;">${tot_ter_costo:,.0f}</div></div>', unsafe_allow_html=True)
             c_t3.markdown(f'<div class="metric-card"><div class="metric-title">Margen de Ganancia</div><div class="metric-value-money" style="color:#28a745; font-size: 1.5rem;">${tot_ter_margen:,.0f}</div></div>', unsafe_allow_html=True)
-            c_t4.markdown(f'<div class="metric-card"><div class="metric-title">Paños Tercerizados</div><div class="metric-value-number" style="font-size: 1.5rem;">{tot_ter_panos:.1f}</div></div>', unsafe_allow_html=True)
+            c_t4.markdown(f'<div class="metric-card"><div class="metric-title">Paños Asignados</div><div class="metric-value-number" style="font-size: 1.5rem;">{tot_ter_panos:.1f}</div></div>', unsafe_allow_html=True)
         else:
-            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
+            st.info("No hay datos de Terceros o Parabrisas en estado Facturado o Aprobado para el período seleccionado.")
 
 # ==========================================
 # PESTAÑA 5: KPIs
@@ -1190,7 +1190,7 @@ with tab_kpi:
 # PESTAÑA 6: HISTÓRICOS
 # ==========================================
 with tab_hist:
-    if not df_completo.empty: # Usamos df_completo para que no le afecte el filtro mensual de la barra
+    if not df_completo.empty: 
         st.subheader("📅 Histórico Mensual")
         df_hist = df_completo[df_completo['Mes_Hist'] != 'SIN FECHA'].sort_values('Mes_Hist')
         if not df_hist.empty:
