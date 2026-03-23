@@ -200,24 +200,44 @@ def obtener_datos_maestros():
                 renames = {}
                 for c in d.columns:
                     c_str = str(c).upper().strip()
-                    if 'ESTADO FAC' in c_str or 'ESTADOFAC' in c_str: renames[c] = 'ESTADO_FAC'
-                    elif 'ESTADO TALLER' in c_str or 'ESTADOTALLER' in c_str or c_str == 'ESTADO': renames[c] = 'ESTADO_TALLER'
-                    elif 'FASE' in c_str: renames[c] = 'FASE_TALLER'
-                    elif 'COMPAÑIA' in c_str or 'SEGURO' in c_str or 'EMPRESA' in c_str or 'CLIENTE' in c_str: renames[c] = 'EMPRESA_TALLER'
-                    elif 'OBSERVACION' in c_str: renames[c] = 'OBSERVACIONES_TALLER'
-                    elif 'PROMESA' in c_str: renames[c] = 'FECHA_PROMESA_I'
-                    elif 'TICKET' in c_str: renames[c] = 'FECHA_TICKET'
-                    elif 'INGRESO' in c_str or c_str == 'FECHA': renames[c] = 'FECHA_INGRESO_TALLER'
-                    elif 'HORA' in c_str: renames[c] = 'HORA_ENTREGA'
-                    elif 'DOMINIO' in c_str or 'PATENTE' in c_str: renames[c] = 'PATENTE'
-                    # 🚨 SOLUCIÓN PARABRISAS/TERCEROS: Agregamos las palabras que usan ustedes para facturar
+                    # 🚨 SOLUCIÓN TERCEROS/PARABRISAS: Atrapar columna "FAC" y "fac" literalmente
+                    if 'ESTADO FAC' in c_str or 'ESTADOFAC' in c_str or c_str == 'FAC': 
+                        renames[c] = 'ESTADO_FAC'
+                    elif 'ESTADO TALLER' in c_str or 'ESTADOTALLER' in c_str or c_str == 'ESTADO': 
+                        renames[c] = 'ESTADO_TALLER'
+                    elif 'FASE' in c_str: 
+                        renames[c] = 'FASE_TALLER'
+                    elif 'COMPAÑIA' in c_str or 'SEGURO' in c_str or 'EMPRESA' in c_str or 'CLIENTE' in c_str: 
+                        if 'EMPRESA_TALLER' not in renames.values(): renames[c] = 'EMPRESA_TALLER'
+                    elif 'OBSERVACION' in c_str: 
+                        renames[c] = 'OBSERVACIONES_TALLER'
+                    # 🚨 Corregimos FECH/PROM que no dice promesa
+                    elif 'PROMESA' in c_str or 'FECH/PROM' in c_str: 
+                        renames[c] = 'FECHA_PROMESA_I'
+                    elif 'TICKET' in c_str: 
+                        renames[c] = 'FECHA_TICKET'
+                    elif 'INGRESO' in c_str or c_str == 'FECHA': 
+                        renames[c] = 'FECHA_INGRESO_TALLER'
+                    elif 'HORA' in c_str: 
+                        renames[c] = 'HORA_ENTREGA'
+                    elif 'DOMINIO' in c_str or 'PATENTE' in c_str: 
+                        renames[c] = 'PATENTE'
                     elif 'PRECIO' in c_str or 'MONTO' in c_str or 'TOTAL' in c_str or 'FRANQUICIA' in c_str or 'MANO DE OBRA' in c_str: 
-                        if 'PRECIO' not in renames.values(): renames[c] = 'PRECIO'
+                        if 'PRECIO' not in renames.values(): renames[c] = 'PRECIO' 
                     elif 'COSTO' in c_str or 'REPUESTO' in c_str: 
-                        if 'COSTO' not in renames.values(): renames[c] = 'COSTO' 
-                    elif 'TERCERO' in c_str: renames[c] = 'ASESOR'
-                    elif 'MES' in c_str: renames[c] = 'MES'
-                    elif 'MARCA' in c_str or 'VEHICULO' in c_str: renames[c] = 'VEHICULO'
+                        if 'COSTO' not in renames.values(): renames[c] = 'COSTO'
+                    # 🚨 Agarramos Asesor que antes decía Tercero, o literalmente Asesor
+                    elif 'TERCERO' in c_str or 'ASESOR' in c_str: 
+                        if 'ASESOR' not in renames.values(): renames[c] = 'ASESOR'
+                    elif c_str == 'MES': 
+                        renames[c] = 'MES'
+                    # 🚨 Corregimos VEHICILO (error de tipeo en Parabrisas)
+                    elif 'MARCA' in c_str or 'VEHIC' in c_str: 
+                        renames[c] = 'VEHICULO'
+                    # 🚨 Nos aseguramos que paños se mapee si o si
+                    elif 'PAÑO' in c_str:
+                        if 'PAÑOS' not in renames.values(): renames[c] = 'PAÑOS'
+
                 d = d.rename(columns=renames)
                 
                 if 'MES' in d.columns:
@@ -1087,6 +1107,7 @@ with tab_fac:
                 df_res = pd.DataFrame(index=pivot.index)
                 df_res['📦 FAC'] = pivot[('Paños', 'Facturado (FAC)')]
                 df_res['📦 SI'] = pivot[('Paños', 'Aprobado (SI)')]
+                df_res['📦 EST. CIERRE (FAC+SI)'] = df_res['📦 FAC'] + df_res['📦 OTROS (En Taller)'] * 0 # Solo FAC y SI
                 df_res['📦 EST. CIERRE (FAC+SI)'] = df_res['📦 FAC'] + df_res['📦 SI']
                 df_res['📦 OTROS (En Taller)'] = pivot[('Paños', 'En Taller (Otros)')]
                 df_res['💰 FAC'] = pivot[('Precio', 'Facturado (FAC)')]
