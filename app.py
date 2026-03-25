@@ -712,16 +712,21 @@ with tab_turnos:
             if not entregas_atrasadas.empty:
                 entregas_atrasadas = entregas_atrasadas.sort_values(by='Fecha_Promesa_Disp', ascending=True)
                 entregas_atrasadas['Fecha Prom.'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                # Calculamos los días de demora exactos
+                entregas_atrasadas['Demora (Días)'] = entregas_atrasadas['Fecha_Promesa_Disp'].apply(lambda x: (hoy.date() - x).days if pd.notna(x) else 0)
+                
                 edit_atra = st.data_editor(
-                    entregas_atrasadas[['Entregado_OK', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Grupo', 'Precio', 'Observaciones']], 
+                    entregas_atrasadas[['Entregado_OK', 'Demora (Días)', 'Fecha Prom.', 'Patente', 'Vehiculo', 'Asesor', 'Estado_Taller', 'Grupo', 'Precio', 'Observaciones']], 
                     hide_index=True, 
                     use_container_width=True,
                     column_config={
                         "Entregado_OK": st.column_config.CheckboxColumn("✅ Listo", default=False),
+                        "Demora (Días)": st.column_config.NumberColumn("⚠️ Demora", format="%d días"),
                         "Fecha Prom.": st.column_config.TextColumn("📅 Venció", disabled=True),
                         "Patente": st.column_config.TextColumn("Patente", disabled=True), 
                         "Vehiculo": st.column_config.TextColumn("Vehículo", disabled=True), 
                         "Asesor": st.column_config.TextColumn("Asesor", disabled=True), 
+                        "Estado_Taller": st.column_config.TextColumn("Estado", disabled=True),
                         "Grupo": st.column_config.TextColumn("Grupo", disabled=True),
                         "Precio": st.column_config.NumberColumn("Monto ($)", format="$ %d", disabled=True),
                         "Observaciones": st.column_config.TextColumn("Observaciones", disabled=True)
