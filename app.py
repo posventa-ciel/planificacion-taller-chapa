@@ -536,23 +536,28 @@ with tab_turnos:
                                 fecha_str = f_inicio.strftime('%d/%m/%Y')
                                 
                                # --- INICIO DEL CÓDIGO CORREGIDO ---
+                                # EXACTAMENTE 16 COLUMNAS COMO EN EL EXCEL (De la A a la P)
                                 nueva_fila = [
-                                    "NO",                                                 # A: TIPO
-                                    str(fecha_str),                                       # B: FECHA
-                                    "-",                                                  # C: HORAS
+                                    "NO",                                                 # A: TURNO
+                                    str(fecha_str),                                       # B: FECHA TURNO
+                                    "-",                                                  # C: HORA TURNO
                                     str(nuevo_vehiculo).upper(),                          # D: VEHICULO
                                     str(nueva_patente).upper(),                           # E: PATENTE
                                     str(nuevo_asesor) if nuevo_asesor else "SIN ASIGNAR", # F: ASESOR
                                     str(nuevo_precio) if nuevo_precio else "",            # G: PRECIO
                                     str(nuevo_panos) if nuevo_panos else "",              # H: PAÑOS
                                     str(nueva_obs) if nueva_obs else "",                  # I: OBSERVACIONES
-                                    str(nuevo_tiempo) if nuevo_tiempo else "",            # J: TIEMPO DE ENTR.
+                                    "",                                                   # J: TIEMPO ENTREGA (Lo dejamos vacío)
                                     str(nuevo_cliente) if nuevo_cliente else "PARTICULAR",# K: CLIENTE
                                     str(nuevo_seguro).upper() if nuevo_seguro else "",    # L: SEGURO
-                                    val_recibido,                                         # M: RECIBIDO
-                                    val_foto,                                             # N: FOTOS
-                                    str(nueva_referencia) if nueva_referencia else ""     # O: REFERENCIA (OR)
+                                    "",                                                   # M: N° TICKET (Lo dejamos vacío)
+                                    val_recibido,                                         # N: RECIBIDO
+                                    val_foto,                                             # O: FOTOS
+                                    str(nueva_referencia) if nueva_referencia else ""     # P: N° REFERENCIA (OR)
                                 ]
+                                
+                                hoja.append_row(nueva_fila)
+                                
                                 # --- FIN DEL CÓDIGO CORREGIDO ---
                                 
                                 hoja.append_row(nueva_fila)
