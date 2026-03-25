@@ -845,23 +845,31 @@ with tab_prog:
         st.markdown("## 📑 Listado de Vehículos en Taller (Prioridad por Fecha Promesa)")
         st.write("Columnas actuales: Fechas clave, Vehículo, Asesor, Paños, Monto Pendiente (sólo en terminados) y Observaciones.")
         
-        # Dividimos los estados para mayor claridad
+        # Dividimos los estados para mayor claridad y agregamos el Entregado Final
         estados_map = [
             ("⏳ EN PROCESO", "PROCESO"), 
             ("⛔ DETENIDOS", "DETENIDO"), 
             ("⚠️ TERMINADOS (Pendiente Facturar)", "TERM PEND FACT"),
             ("⏳ TERMINADOS (Pendiente Entregar)", "TERM PEND ENTREG"),
-            ("🚚 ENTREGADOS (Pendiente Facturar)", "ENTREGADO PEND FACT")
+            ("🚚 ENTREGADOS (Pendiente Facturar)", "ENTREGADO PEND FACT"),
+            ("🏁 ENTREGADOS (Listos y Facturados)", "ENTREGADO_FINAL")
         ]
         
-        for titulo, match in estados_map:
-            if "DETENIDO" in match: st.error(f"#### {titulo}")
+        for titulo, match_key in estados_map:
+            if "DETENIDO" in match_key: st.error(f"#### {titulo}")
             else: st.markdown(f"#### {titulo}")
             col1, col2 = st.columns(2)
             
             def dibujar_tabla(col, grupo_nombre, m_key):
                 d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
-                d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
+                
+                # Lógica especial para separar los dos tipos de entregados
+                if m_key == "ENTREGADO_FINAL":
+                    # Busca "ENTREGADO" pero excluye los que dicen "PEND"
+                    d_e = d_g[(d_g['Estado_Taller'].str.contains("ENTREGADO", na=False)) & (~d_g['Estado_Taller'].str.contains("PEND", na=False))].copy()
+                else:
+                    d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
+                    
                 with col:
                     st.caption(f"**{grupo_nombre}**")
                     if not d_e.empty:
@@ -890,10 +898,10 @@ with tab_prog:
                             },
                             key=f"{grupo_nombre}_{m_key}_{asesor_filtro_prog}_detalle"
                         )
-                    else: st.caption(f"Sin vehículos en este estado.")
+                    else: st.caption("Sin vehículos en este estado.")
                     
-            dibujar_tabla(col1, "GRUPO UNO", match)
-            dibujar_tabla(col2, "GRUPO DOS", match)
+            dibujar_tabla(col1, "GRUPO UNO", match_key)
+            dibujar_tabla(col2, "GRUPO DOS", match_key)
             st.markdown("<br>", unsafe_allow_html=True)
         
         st.divider()
