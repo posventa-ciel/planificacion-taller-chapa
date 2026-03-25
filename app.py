@@ -611,7 +611,7 @@ with tab_turnos:
                     st.caption("🚶‍♂️ Ingresos Adicionales (Sin Turno)")
                     edited_sin = st.data_editor(df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False), "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)}, hide_index=True, use_container_width=True, key="editor_sin")
 
-               if st.button("💾 Guardar Ingresos"):
+            if st.button("💾 Guardar Ingresos"):
                     with st.spinner("Conectando con Google Sheets y sincronizando..."):
                         patentes_sheet = hoja.col_values(5) if hoja else []
                         indices_a_borrar = []
