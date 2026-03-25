@@ -1039,6 +1039,22 @@ with tab_fac:
         c_r2.markdown(f'<div class="metric-card"><div class="metric-title">Aprobado (SI)</div><div class="metric-value-money" style="color:#28a745;">{formato_pesos(pesos_si)}</div><div class="metric-subtitle-green" style="font-size: 1.1rem; margin-top: 8px;">📦 {panos_si:.1f} paños</div></div>', unsafe_allow_html=True)
         c_r3.markdown(f'<div class="metric-card" style="border: 2px solid #00235d; background-color: #f8f9fa;"><div class="metric-title" style="color:#00235d;">Estimado a Cierre de Mes</div><div class="metric-value-money" style="color:#00235d;">{formato_pesos(pesos_est)}</div><div class="metric-subtitle-gray" style="font-size: 1.1rem; color:#00235d; font-weight: bold; margin-top: 8px;">📦 {panos_est:.1f} paños totales</div></div>', unsafe_allow_html=True)
         
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # --- SECCIÓN MOVIDA: ALERTAS VISUALES DE PLATA INMOVILIZADA ---
+        df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
+        df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
+        df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
+
+        st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
+        c_e1, c_e2, c_e3 = st.columns(3)
+        c_e1.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Facturar</div><div class="metric-value-money">{formato_pesos(df_tpf["Precio"].sum())}</div><div class="metric-subtitle-red">⚠️ {df_tpf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
+        c_e2.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Entregar</div><div class="metric-value-money">{formato_pesos(df_tpe["Precio"].sum())}</div><div class="metric-subtitle-blue">⏳ {df_tpe["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
+        c_e3.markdown(f'<div class="metric-card"><div class="metric-title">Entregado Pend. Facturar</div><div class="metric-value-money">{formato_pesos(df_epf["Precio"].sum())}</div><div class="metric-subtitle-green">🚚 {df_epf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # --- RADIOGRAFÍA DEL SI ---
         with st.expander("🔍 Radiografía del Aprobado (¿Dónde está la plata del 'SI'?)", expanded=True):
             st.write("Desglose de los autos que tienen 'SI' cargado. Lo ideal es que el monto se concentre arriba. \n\n**🛑 Nota Importante:** Ya eliminamos automáticamente a los autos 'DETENIDOS' de esta tabla y de la proyección mensual. Al no tener fecha de salida cierta, sumarlos es falsear los ingresos.")
             
@@ -1150,17 +1166,6 @@ with tab_fac:
         else:
             st.info("Para ver la Curva de Proyección de Ingresos, por favor seleccioná un mes específico en la barra lateral.")
 
-        st.divider()
-
-        df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
-        df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
-        df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
-
-        st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
-        c_e1, c_e2, c_e3 = st.columns(3)
-        c_e1.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Facturar</div><div class="metric-value-money">{formato_pesos(df_tpf["Precio"].sum())}</div><div class="metric-subtitle-red">⚠️ {df_tpf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
-        c_e2.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Entregar</div><div class="metric-value-money">{formato_pesos(df_tpe["Precio"].sum())}</div><div class="metric-subtitle-blue">⏳ {df_tpe["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
-        c_e3.markdown(f'<div class="metric-card"><div class="metric-title">Entregado Pend. Facturar</div><div class="metric-value-money">{formato_pesos(df_epf["Precio"].sum())}</div><div class="metric-subtitle-green">🚚 {df_epf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
         st.divider()
 
         st.write("### 📊 Análisis de Producción Detallado")
