@@ -55,7 +55,12 @@ CLIENTES_LISTA = ["CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "C
 OBJETIVO_MENSUAL_PANOS = 505.0
 
 # --- LÓGICA DE DÍAS HÁBILES ---
-FERIADOS_ARG = [date(datetime.now().year, 3, 24)] 
+anio_actual = datetime.now().year
+FERIADOS_ARG = [
+    date(anio_actual, 3, 24), # Día de la Memoria
+    date(anio_actual, 4, 2),  # Día de Malvinas / Jueves Santo
+    date(anio_actual, 4, 3)   # Viernes Santo
+]
 
 def dias_habiles_del_mes(anio, mes):
     _, ult_dia = calendar.monthrange(anio, mes)
