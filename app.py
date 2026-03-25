@@ -1047,7 +1047,7 @@ with tab_fac:
         df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
 
         # --- ALERTAS VISUALES DE PLATA INMOVILIZADA (Sincronizadas con el "SI") ---
-        df_alertas_si = df[df['Estado_Resumen'] == 'Aprobado (SI)']
+        df_alertas_si = df_analisis[df_analisis['Estado_Resumen'] == 'Aprobado (SI)']
 
         df_tpf = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
         df_tpe = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
