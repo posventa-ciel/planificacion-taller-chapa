@@ -381,7 +381,10 @@ with st.sidebar:
     st.markdown("### ⚙️ Sistema")
     if st.button("🔄 Forzar Actualización", use_container_width=True):
         st.cache_data.clear()
-        st.success("¡Datos actualizados!"); time.sleep(0.5); st.rerun()
+        # Le decimos que también mate la memoria temporal de los turnos
+        if 'memoria_turnos_v11' in st.session_state:
+            del st.session_state['memoria_turnos_v11']
+        st.success("¡Datos actualizados y memoria limpia!"); time.sleep(0.5); st.rerun()
     st.caption("Datos extraídos de Google Sheets.")
 
 # --- APLICAR FILTRO MENSUSAL GLOBAL A MAESTRO ---
