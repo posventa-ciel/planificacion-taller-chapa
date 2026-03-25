@@ -844,7 +844,15 @@ with tab_prog:
 
         st.markdown("## 📑 Listado de Vehículos en Taller (Prioridad por Fecha Promesa)")
         st.write("Columnas actuales: Fechas clave, Vehículo, Asesor, Paños, Monto Pendiente (sólo en terminados) y Observaciones.")
-        estados_map = [("⏳ EN PROCESO", "PROCESO"), ("⛔ DETENIDOS", "DETENIDO"), ("✅ TERMINADOS (Pte. Fact/Entr)", "TERM PEND"), ("🚚 ENTREGADOS", "ENTREGADO")]
+        
+        # Dividimos los estados para mayor claridad
+        estados_map = [
+            ("⏳ EN PROCESO", "PROCESO"), 
+            ("⛔ DETENIDOS", "DETENIDO"), 
+            ("⚠️ TERMINADOS (Pendiente Facturar)", "TERM PEND FACT"),
+            ("⏳ TERMINADOS (Pendiente Entregar)", "TERM PEND ENTREG"),
+            ("🚚 ENTREGADOS (Pendiente Facturar)", "ENTREGADO PEND FACT")
+        ]
         
         for titulo, match in estados_map:
             if "DETENIDO" in match: st.error(f"#### {titulo}")
@@ -863,7 +871,8 @@ with tab_prog:
                         d_e['1ra Promesa'] = d_e['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
                         d_e['F. Entrega'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
                         
-                        if m_key == "TERM PEND":
+                        # Si es alguno de los terminados o entregados, mostramos la plata
+                        if "TERM" in m_key or "ENTREGADO" in m_key:
                             cols_to_show = ['F. Ingreso', '1ra Promesa', 'F. Entrega', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Paños', 'Precio', 'Observaciones']
                         else:
                             cols_to_show = ['F. Ingreso', '1ra Promesa', 'F. Entrega', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Paños', 'Observaciones']
