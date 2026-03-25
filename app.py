@@ -532,11 +532,27 @@ with tab_turnos:
                                 val_foto = "SI" if val_foto_bool else ""
                                 fecha_str = f_inicio.strftime('%d/%m/%Y')
                                 
+                                # --- INICIO DEL CÓDIGO BLINDADO ---
+                                # Forzamos a que todo sea texto (str) para que Google Sheets no se coma las celdas vacías
                                 nueva_fila = [
-                                    "NO", fecha_str, "-", nuevo_vehiculo.upper(), nueva_patente.upper(), "", 
-                                    nuevo_asesor, nuevo_precio, nuevo_panos, nueva_obs, nuevo_tiempo, 
-                                    nuevo_cliente, nuevo_seguro.upper(), val_recibido, val_foto, nueva_referencia
+                                    "NO", 
+                                    str(fecha_str), 
+                                    "-", 
+                                    str(nuevo_vehiculo).upper(), 
+                                    str(nueva_patente).upper(), 
+                                    "",  # Chasis (siempre respeta el espacio, lo dejamos vacío por ahora)
+                                    str(nuevo_asesor) if nuevo_asesor else "SIN ASIGNAR", 
+                                    str(nuevo_precio) if nuevo_precio else "", 
+                                    str(nuevo_panos) if nuevo_panos else "", 
+                                    str(nueva_obs) if nueva_obs else "", 
+                                    str(nuevo_tiempo) if nuevo_tiempo else "", 
+                                    str(nuevo_cliente) if nuevo_cliente else "PARTICULAR", 
+                                    str(nuevo_seguro).upper() if nuevo_seguro else "", 
+                                    val_recibido, 
+                                    val_foto, 
+                                    str(nueva_referencia) if nueva_referencia else ""
                                 ]
+                                # --- FIN DEL CÓDIGO BLINDADO ---
                                 
                                 hoja.append_row(nueva_fila)
                                 
