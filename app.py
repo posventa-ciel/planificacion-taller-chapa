@@ -1063,7 +1063,7 @@ with tab_fac:
                 est = str(row['Estado_Taller']).upper()
                 f_prom = row['Fecha_Promesa_Disp']
                 if 'ENTREGADO' in est: return '1. 🚚 Entregados (Solo falta emitir factura)'
-                if 'TERM' in est: return '2. ✅ Terminados (Falta entregar al cliente)'
+                if 'TERM' in est: return '2. ✅ TERMINADOS (Falta Facturar y entregar al cliente)'
                 if pd.notna(f_prom) and f_prom < hoy.date(): return '4. 🔴 Atrasados en Producción'
                 return '3. 🟢 En Taller (A tiempo)'
 
