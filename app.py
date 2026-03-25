@@ -464,7 +464,7 @@ if not df.empty:
             recomendaciones_grupos[row['Grupo']] = fecha_recomendada
 
 tab_turnos, tab_prog, tab_portal, tab_fac, tab_kpi, tab_hist = st.tabs([
-    "📋 Turnero y Entregas", "🛠️ Kanban de Taller", "🏢 Seguimiento Empresas", "💰 Facturación", "📊 KPIs", "📅 Históricos"
+    "📋 Turnero y Entregas", "🛠️ Programación del Taller", "🏢 Seguimiento Empresas", "💰 Facturación", "📊 KPIs", "📅 Históricos"
 ])
 
 # ==========================================
