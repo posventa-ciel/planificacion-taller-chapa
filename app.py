@@ -1046,26 +1046,36 @@ with tab_fac:
         df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
         df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
 
+        # --- ALERTAS VISUALES DE PLATA INMOVILIZADA (Sincronizadas con el "SI") ---
+        df_alertas_si = df[df['Estado_Resumen'] == 'Aprobado (SI)']
+
+        df_tpf = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
+        df_tpe = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
+        df_epf = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("ENTREGADO", na=False)]
+
         st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
         c_e1, c_e2, c_e3 = st.columns(3)
         c_e1.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Facturar</div><div class="metric-value-money">{formato_pesos(df_tpf["Precio"].sum())}</div><div class="metric-subtitle-red">⚠️ {df_tpf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
         c_e2.markdown(f'<div class="metric-card"><div class="metric-title">Terminado Pend. Entregar</div><div class="metric-value-money">{formato_pesos(df_tpe["Precio"].sum())}</div><div class="metric-subtitle-blue">⏳ {df_tpe["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
-        c_e3.markdown(f'<div class="metric-card"><div class="metric-title">Entregado Pend. Facturar</div><div class="metric-value-money">{formato_pesos(df_epf["Precio"].sum())}</div><div class="metric-subtitle-green">🚚 {df_epf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
+        c_e3.markdown(f'<div class="metric-card"><div class="metric-title">Entregados (Pendiente Facturar)</div><div class="metric-value-money">{formato_pesos(df_epf["Precio"].sum())}</div><div class="metric-subtitle-green">🚚 {df_epf["Paños"].sum():.1f} paños físicos</div></div>', unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
 
         # --- RADIOGRAFÍA DEL SI ---
         with st.expander("🔍 Radiografía del Aprobado (¿Dónde está la plata del 'SI'?)", expanded=True):
-            st.write("Desglose de los autos que tienen 'SI' cargado. Lo ideal es que el monto se concentre arriba. \n\n**🛑 Nota Importante:** Ya eliminamos automáticamente a los autos 'DETENIDOS' de esta tabla y de la proyección mensual. Al no tener fecha de salida cierta, sumarlos es falsear los ingresos.")
+            st.write("Desglose exacto de los autos que tienen 'SI' cargado y cómo componen las tarjetas de arriba.")
             
             df_si_detail = df_si.copy()
             def status_si(row):
                 est = str(row['Estado_Taller']).upper()
                 f_prom = row['Fecha_Promesa_Disp']
-                if 'ENTREGADO' in est: return '1. 🚚 Entregados (Solo falta emitir factura)'
-                if 'TERM' in est: return '2. ✅ TERMINADOS (Falta Facturar y entregar al cliente)'
-                if pd.notna(f_prom) and f_prom < hoy.date(): return '4. 🔴 Atrasados en Producción'
-                return '3. 🟢 En Taller (A tiempo)'
+                
+                # Sincronizamos las categorías con las tarjetas
+                if 'ENTREGADO' in est: return '1. 🚚 Entregados (Pendiente Facturar)'
+                if 'TERM PEND ENTREG' in est: return '2. ⏳ Terminados (Pendiente Entregar)'
+                if 'TERM' in est: return '3. ⚠️ Terminados (Pendiente Facturar)'
+                if pd.notna(f_prom) and f_prom < hoy.date(): return '5. 🔴 Atrasados en Producción'
+                return '4. 🟢 En Taller (A tiempo)'
 
             df_si_detail['Categoría_Real'] = df_si_detail.apply(status_si, axis=1)
             
@@ -1083,8 +1093,6 @@ with tab_fac:
                 "Paños": st.column_config.NumberColumn("Paños"),
                 "Pesos ($)": st.column_config.TextColumn("Monto Esperado")
             })
-
-        st.divider()
 
         # --- RADAR MES SIGUIENTE (NO) ---
         st.write("### 🔭 Radar del Mes Siguiente (Estado 'NO')")
