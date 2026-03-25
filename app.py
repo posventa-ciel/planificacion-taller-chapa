@@ -1162,7 +1162,11 @@ with tab_fac:
             c_n3.markdown(f'<div class="metric-card"><div class="metric-title">Plata Proyectada</div><div class="metric-value-money" style="color:#6f42c1;">{formato_pesos(p_no)}</div></div>', unsafe_allow_html=True)
             
             with st.expander("Ver detalle de los autos marcados con 'NO'"):
-                st.dataframe(df_no[['Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Grupo', 'Paños', 'Precio']], hide_index=True, use_container_width=True, column_config={"Precio": st.column_config.NumberColumn("Precio ($)", format="$ %d")})
+                df_no_show = df_no.copy()
+                # Formateamos la fecha para que se vea linda
+                df_no_show['Fecha Promesa'] = df_no_show['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
+                
+                st.dataframe(df_no_show[['Fecha Promesa', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Grupo', 'Paños', 'Precio']], hide_index=True, use_container_width=True, column_config={"Precio": st.column_config.NumberColumn("Precio ($)", format="$ %d")})
         else:
             st.info("No hay vehículos marcados con 'NO' en la planilla todavía.")
             
