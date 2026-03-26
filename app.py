@@ -565,7 +565,7 @@ with tab_turnos:
                                     st.error(f"Error al guardar: {e}")
                         else:
                             st.warning("Por favor completá Patente y Vehículo.")
-                        else:
+                    else:
                             st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
                     else: 
                         st.error("Por favor completa la Patente y el Vehículo.")
