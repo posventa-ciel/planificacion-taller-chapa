@@ -502,6 +502,10 @@ with tab_turnos:
         
     with col_add:
         with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
+            # 1. Inicializamos el candado en la memoria del navegador
+            if "procesando_envio" not in st.session_state:
+                st.session_state.procesando_envio = False
+
             with st.form("form_sin_turno", clear_on_submit=True):
                 c_pat, c_veh, c_cli = st.columns(3)
                 nueva_patente = c_pat.text_input("Patente *")
@@ -513,10 +517,9 @@ with tab_turnos:
                 nuevo_precio = c_pre.text_input("Precio ($)")
                 nuevo_panos = c_pan.text_input("Paños (Ej: 1.5)")
                 
-                c_tie, c_obs, c_ase = st.columns(3)
-                nuevo_tiempo = c_tie.text_input("Tiempo Entrega (Días)")
-                nueva_obs = c_obs.text_input("Observaciones")
-                nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=ASESORES_LISTA.index(asesor_filtro) if asesor_filtro in ASESORES_LISTA else 0)
+                c_obs, c_ase = st.columns(2)
+                nueva_obs = c_obs.text_input("Observaciones (Opcional)")
+                nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=0)
                 
                 st.write("---")
                 st.write("📋 Checklist de Recepción:")
@@ -525,58 +528,43 @@ with tab_turnos:
                 val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
                 nueva_referencia = c_ref.text_input("Número de Referencia (OR)")
 
-                st.caption("* Campos obligatorios para identificar el auto.")
-                
+                # 2. El botón de envío con protección
                 if st.form_submit_button("Agregar al Turnero y Guardar en Sheets"):
-                    if nueva_patente and nuevo_vehiculo:
-                        if hoja is not None:
-                            try:
-                                val_recibido = "Si" if val_recibido_bool else ""
-                                val_foto = "SI" if val_foto_bool else ""
-                                fecha_str = f_inicio.strftime('%d/%m/%Y')
-                                
-                               # --- INICIO DEL CÓDIGO CORREGIDO ---
-                                # EXACTAMENTE 16 COLUMNAS COMO EN EL EXCEL (De la A a la P)
-                                nueva_fila = [
-                                    "NO",                                                 # A: TURNO
-                                    str(fecha_str),                                       # B: FECHA TURNO
-                                    "-",                                                  # C: HORA TURNO
-                                    str(nuevo_vehiculo).upper(),                          # D: VEHICULO
-                                    str(nueva_patente).upper(),                           # E: PATENTE
-                                    str(nuevo_asesor) if nuevo_asesor else "SIN ASIGNAR", # F: ASESOR
-                                    str(nuevo_precio) if nuevo_precio else "",            # G: PRECIO
-                                    str(nuevo_panos) if nuevo_panos else "",              # H: PAÑOS
-                                    str(nueva_obs) if nueva_obs else "",                  # I: OBSERVACIONES
-                                    "",                                                   # J: TIEMPO ENTREGA (Lo dejamos vacío)
-                                    str(nuevo_cliente) if nuevo_cliente else "PARTICULAR",# K: CLIENTE
-                                    str(nuevo_seguro).upper() if nuevo_seguro else "",    # L: SEGURO
-                                    "",                                                   # M: N° TICKET (Lo dejamos vacío)
-                                    val_recibido,                                         # N: RECIBIDO
-                                    val_foto,                                             # O: FOTOS
-                                    str(nueva_referencia) if nueva_referencia else ""     # P: N° REFERENCIA (OR)
-                                ]
-                                
-                                hoja.append_row(nueva_fila)
-                                
-                                # --- FIN DEL CÓDIGO CORREGIDO ---
-                                
-                                hoja.append_row(nueva_fila)
-                                
-                                nuevo_ingreso = pd.DataFrame([{
-                                    'Tipo': '🚶‍♂️ SIN TURNO', 'Fecha': f_inicio, 'Hora': '-', 'Vehiculo': nuevo_vehiculo.upper(), 
-                                    'Patente': nueva_patente.upper(), 'Chasis': '', 'Asesor': nuevo_asesor, 'Precio': nuevo_precio, 
-                                    'Paños': nuevo_panos, 'Observaciones': nueva_obs, 'Tiempo_Entrega': nuevo_tiempo, 
-                                    'Cliente': nuevo_cliente, 'Seguro': nuevo_seguro.upper(), 'Recibido': val_recibido_bool, 
-                                    'Fotos': val_foto_bool, 'Cancelado': False, 'OR': nueva_referencia, 'Eliminar': False
-                                }])
-                                st.session_state.memoria_turnos_v11 = pd.concat([st.session_state.memoria_turnos_v11, nuevo_ingreso], ignore_index=True)
-                                
-                                st.success(f"¡Vehículo {nueva_patente.upper()} agregado correctamente a la planilla de Google!")
-                                time.sleep(1.5)
-                                st.rerun()
-                                
-                            except Exception as e:
-                                st.error(f"Error al guardar en Google Sheets: {e}")
+                    # Si el candado está abierto, procesamos
+                    if not st.session_state.procesando_envio:
+                        if nueva_patente and nuevo_vehiculo:
+                            st.session_state.procesando_envio = True # Cerramos el candado
+                            if hoja is not None:
+                                try:
+                                    val_recibido = "Si" if val_recibido_bool else ""
+                                    val_foto = "SI" if val_foto_bool else ""
+                                    fecha_str = f_inicio.strftime('%d/%m/%Y')
+                                    
+                                    # MAPA EXACTO DE 16 COLUMNAS (A a la P)
+                                    nueva_fila = [
+                                        "NO", str(fecha_str), "-", str(nuevo_vehiculo).upper(), 
+                                        str(nueva_patente).upper(), str(nuevo_asesor), str(nuevo_precio), 
+                                        str(nuevo_panos), str(nueva_obs), "", str(nuevo_cliente), 
+                                        str(nuevo_seguro).upper(), "", val_recibido, val_foto, str(nueva_referencia)
+                                    ]
+                                    
+                                    hoja.append_row(nueva_fila)
+                                    
+                                    # 3. Limpiamos la memoria para que no haya duplicados ni fantasmas
+                                    st.cache_data.clear()
+                                    if 'memoria_turnos_v11' in st.session_state:
+                                        del st.session_state['memoria_turnos_v11']
+                                    
+                                    st.success(f"¡Vehículo {nueva_patente.upper()} guardado exitosamente!")
+                                    
+                                    time.sleep(1)
+                                    st.session_state.procesando_envio = False # Abrimos candado para el próximo
+                                    st.rerun()
+                                except Exception as e:
+                                    st.session_state.procesando_envio = False
+                                    st.error(f"Error al guardar: {e}")
+                        else:
+                            st.warning("Por favor completá Patente y Vehículo.")
                         else:
                             st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
                     else: 
