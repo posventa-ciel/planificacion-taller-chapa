@@ -567,7 +567,7 @@ with tab_turnos:
                             st.warning("Por favor completá Patente y Vehículo.")
                     else:
                             st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
-                    else: 
+                else: 
                         st.error("Por favor completa la Patente y el Vehículo.")
 
     st.markdown("<br>", unsafe_allow_html=True)
