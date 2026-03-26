@@ -137,7 +137,8 @@ def obtener_turnos():
         
         col_recibido = next((c for c in d.columns if 'RECIBID' in c), None)
         col_fotos = next((c for c in d.columns if 'FOTO' in c), None)
-        col_or = next((c for c in d.columns if 'OR' == c or 'REFERENCIA' in c), None)
+        col_or = next((c for c in d.columns if 'OR' == c or 'REFERENCIA' in c or 'TICKET' in c), None)
+        col_turno = next((c for c in d.columns if 'TURNO' in c), 'TURNO')
         
         for _, row in d.iterrows():
             col_fecha = next((c for c in d.columns if 'FECH' in c), None)
@@ -154,8 +155,15 @@ def obtener_turnos():
             
             val_or = str(row.get(col_or, '')).strip() if col_or else ""
             
+            # MAGIA PARA SEPARAR: Leemos la columna A ("TURNO")
+            val_turno_str = str(row.get(col_turno, '')).strip().upper()
+            if val_turno_str == "NO":
+                tipo_turno = '🚶‍♂️ SIN TURNO'
+            else:
+                tipo_turno = '📅 PROGRAMADO'
+            
             filas.append({
-                'Tipo': '📅 PROGRAMADO', 'Fecha': fecha_turno.date(), 'Hora': str(row.get('HORAS', '')).strip(),
+                'Tipo': tipo_turno, 'Fecha': fecha_turno.date(), 'Hora': str(row.get('HORA TURNO', row.get('HORAS', ''))).strip(),
                 'Vehiculo': str(row.get('VEHICULO', '')).upper(), 'Patente': str(row.get('PATENTE', '')).upper(),
                 'Chasis': str(row.get(col_chasis, '')).strip().upper() if col_chasis else "",
                 'Asesor': asesor_raw, 'Precio': str(row.get('PRECIO', '')).strip(), 'Paños': str(row.get('PAÑOS', '')).strip(),
@@ -381,7 +389,6 @@ with st.sidebar:
     st.markdown("### ⚙️ Sistema")
     if st.button("🔄 Forzar Actualización", use_container_width=True):
         st.cache_data.clear()
-        # Le decimos que también mate la memoria temporal de los turnos
         if 'memoria_turnos_v11' in st.session_state:
             del st.session_state['memoria_turnos_v11']
         st.success("¡Datos actualizados y memoria limpia!"); time.sleep(0.5); st.rerun()
@@ -502,7 +509,6 @@ with tab_turnos:
         
     with col_add:
         with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
-            # 1. Inicializamos el candado en la memoria del navegador
             if "procesando_envio" not in st.session_state:
                 st.session_state.procesando_envio = False
 
@@ -512,95 +518,69 @@ with tab_turnos:
                 nuevo_vehiculo = c_veh.text_input("Vehículo *")
                 nuevo_cliente = c_cli.selectbox("Cliente", CLIENTES_LISTA)
                 
-                c_seg, c_pre, c_pan = st.columns(3)
+                c_seg, c_pan, c_ase = st.columns(3)
                 nuevo_seguro = c_seg.text_input("Seguro")
-                nuevo_precio = c_pre.text_input("Precio ($)")
                 nuevo_panos = c_pan.text_input("Paños (Ej: 1.5)")
-                
-                c_obs, c_ase = st.columns(2)
-                nueva_obs = c_obs.text_input("Observaciones (Opcional)")
                 nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=0)
                 
+                c_tic, c_ref, c_obs = st.columns(3)
+                nuevo_ticket = c_tic.text_input("N° Ticket")
+                nueva_referencia = c_ref.text_input("N° Referencia")
+                nueva_obs = c_obs.text_input("Observaciones")
+                
                 st.write("---")
-                st.write("📋 Checklist de Recepción:")
-                c_chk1, c_chk2, c_ref = st.columns(3)
+                c_chk1, c_chk2 = st.columns(2)
                 val_recibido_bool = c_chk1.checkbox("✅ ¿Vehículo Recibido?")
                 val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
-                nueva_referencia = c_ref.text_input("Número de Referencia (OR)")
 
-                # --- DENTRO DE LA PESTAÑA 1, EN LA COLUMNA col_add ---
-with col_add:
-    with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
-        # Todo este bloque debe tener una sangría (indentación) extra hacia la derecha
-        if "procesando_envio" not in st.session_state:
-            st.session_state.procesando_envio = False
-
-        with st.form("form_sin_turno", clear_on_submit=True):
-            c1, c2, c3 = st.columns(3)
-            nueva_patente = c1.text_input("Patente *")
-            nuevo_vehiculo = c2.text_input("Vehículo *")
-            nuevo_cliente = c3.selectbox("Cliente", CLIENTES_LISTA)
-            
-            c4, c5, c6 = st.columns(3)
-            nuevo_seguro = c4.text_input("Seguro / Compañía")
-            nuevo_precio = c5.text_input("Precio Estimado ($)")
-            nuevo_panos = c6.text_input("Paños (Ej: 2)")
-            
-            c7, c8, c9 = st.columns(3)
-            nuevo_asesor = c7.selectbox("Asesor", ASESORES_LISTA)
-            nueva_referencia = c8.text_input("N° Ticket / Referencia")
-            nueva_obs = c9.text_input("Observaciones")
-
-            c_chk1, c_chk2 = st.columns(2)
-            val_recibido_bool = c_chk1.checkbox("✅ ¿Vehículo Recibido?")
-            val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
-
-            # Botón de envío
-            enviado = st.form_submit_button("Registrar Ingreso Directo")
-            
-            if enviado:
-                if not st.session_state.procesando_envio:
-                    if nueva_patente and nuevo_vehiculo:
-                        st.session_state.procesando_envio = True
-                        if hoja is not None:
-                            try:
-                                # Usamos f_inicio que ya está definido arriba en tu código
-                                fecha_hoy = f_inicio.strftime('%d/%m/%Y')
-                                
-                                # MAPA EXACTO DE 16 COLUMNAS (A a la P)
-                                nueva_fila = [
-                                    "NO",           # A: TURNO
-                                    fecha_hoy,      # B: FECHA
-                                    "-",            # C: HORA
-                                    nuevo_vehiculo.upper(), # D: VEHICULO
-                                    nueva_patente.upper(),  # E: PATENTE
-                                    nuevo_asesor,   # F: ASESOR
-                                    nuevo_asesor,   # G: ASESOR
-                                    nuevo_panos,    # H: PAÑOS
-                                    nueva_obs,      # I: OBSERVACIONES
-                                    "",             # J: TIEMPO ENTREGA
-                                    nuevo_cliente,  # K: CLIENTE
-                                    nuevo_seguro.upper(), # L: SEGURO
-                                    nueva_referencia, # M: N° TICKET
-                                    "SI" if val_recibido_bool else "NO", # N: RECIBIDO
-                                    "SI" if val_foto_bool else "NO",     # O: FOTOS
-                                    nueva_referencia  # P: N° REFERENCIA
-                                ]
-                                
-                                hoja.append_row(nueva_fila)
-                                st.cache_data.clear()
-                                if 'memoria_turnos_v11' in st.session_state:
-                                    del st.session_state['memoria_turnos_v11']
-                                
-                                st.success(f"¡Vehículo {nueva_patente.upper()} ingresado!")
-                                time.sleep(1)
-                                st.session_state.procesando_envio = False
-                                st.rerun()
-                            except Exception as e:
-                                st.session_state.procesando_envio = False
-                                st.error(f"Error al conectar con Sheets: {e}")
+                if st.form_submit_button("Agregar al Turnero y Guardar en Sheets"):
+                    if not st.session_state.procesando_envio:
+                        if nueva_patente and nuevo_vehiculo:
+                            st.session_state.procesando_envio = True
+                            if hoja is not None:
+                                try:
+                                    val_recibido = "SI" if val_recibido_bool else "NO"
+                                    val_foto = "SI" if val_foto_bool else "NO"
+                                    fecha_str = f_inicio.strftime('%d/%m/%Y')
+                                    
+                                    # MAPA EXACTO DE 16 COLUMNAS (A a la P)
+                                    nueva_fila = [
+                                        "NO",                           # A: TURNO
+                                        str(fecha_str),                 # B: FECHA TURNO
+                                        "-",                            # C: HORA TURNO
+                                        str(nuevo_vehiculo).upper(),    # D: VEHICULO
+                                        str(nueva_patente).upper(),     # E: PATENTE
+                                        str(nuevo_asesor),              # F: ASESOR
+                                        str(nuevo_asesor),              # G: ASESOR
+                                        str(nuevo_panos),               # H: PAÑOS
+                                        str(nueva_obs),                 # I: OBSERVACIONES
+                                        "",                             # J: TIEMPO ENTREGA (DIAS)
+                                        str(nuevo_cliente).upper(),     # K: CLIENTE
+                                        str(nuevo_seguro).upper(),      # L: SEGURO
+                                        str(nuevo_ticket),              # M: N° TICKET
+                                        val_recibido,                   # N: RECIBIDO
+                                        val_foto,                       # O: FOTOS
+                                        str(nueva_referencia)           # P: N° REFERENCIA
+                                    ]
+                                    
+                                    hoja.append_row(nueva_fila)
+                                    
+                                    st.cache_data.clear()
+                                    if 'memoria_turnos_v11' in st.session_state:
+                                        del st.session_state['memoria_turnos_v11']
+                                    
+                                    st.success(f"¡Vehículo {nueva_patente.upper()} guardado exitosamente!")
+                                    
+                                    time.sleep(1)
+                                    st.session_state.procesando_envio = False
+                                    st.rerun()
+                                except Exception as e:
+                                    st.session_state.procesando_envio = False
+                                    st.error(f"Error al guardar: {e}")
+                        else:
+                            st.warning("Por favor completá Patente y Vehículo.")
                     else:
-                        st.warning("Por favor, completa Patente y Vehículo.")
+                        st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -629,59 +609,87 @@ with col_add:
                 df_sin = df_pendientes[df_pendientes['Tipo'] == '🚶‍♂️ SIN TURNO']
                 edited_prog, edited_sin = pd.DataFrame(), pd.DataFrame()
                 
+                # Configuracion de columnas (Permite editar Fecha y agregar Observaciones)
+                conf_columnas = {
+                    "Fecha": st.column_config.DateColumn("📅 Fecha (Reprogramar)", format="DD/MM/YYYY"), 
+                    "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), 
+                    "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), 
+                    "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), 
+                    "OR": st.column_config.TextColumn("📝 N° Ticket / Ref", max_chars=10), 
+                    "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False),
+                    "Observaciones": st.column_config.TextColumn("📝 Motivo Cancelación / Novedad", width="medium")
+                }
+                
                 if not df_prog.empty:
-                    st.caption("📅 Programados")
-                    edited_prog = st.data_editor(df_prog[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False)}, hide_index=True, use_container_width=True, key="editor_prog")
+                    st.caption("📅 Programados (Doble clic en la fecha para reprogramar)")
+                    edited_prog = st.data_editor(df_prog[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Observaciones']], column_config=conf_columnas, hide_index=True, use_container_width=True, key="editor_prog")
                 if not df_sin.empty:
                     st.caption("🚶‍♂️ Ingresos Adicionales (Sin Turno)")
-                    edited_sin = st.data_editor(df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Eliminar']], column_config={"Fecha": st.column_config.DateColumn("Fecha", format="DD/MM/YYYY"), "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), "OR": st.column_config.TextColumn("📝 N° de OR", max_chars=10), "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False), "Eliminar": st.column_config.CheckboxColumn("🗑️ Borrar", default=False)}, hide_index=True, use_container_width=True, key="editor_sin")
+                    edited_sin = st.data_editor(df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Seguro', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Observaciones', 'Eliminar']], column_config=conf_columnas, hide_index=True, use_container_width=True, key="editor_sin")
 
             if st.button("💾 Guardar Ingresos"):
                     with st.spinner("Conectando con Google Sheets y sincronizando..."):
                         patentes_sheet = hoja.col_values(5) if hoja else []
                         indices_a_borrar = []
-                        filas_a_borrar_sheet = [] # Guardamos los números de fila a borrar físicamente
+                        filas_a_borrar_sheet = [] 
                         
                         if not edited_prog.empty:
                             for idx, row in edited_prog.iterrows():
                                 row_orig = df_prog.loc[idx]
-                                if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor'] or row['Cancelado'] != row_orig['Cancelado']):
-                                    st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                                if (row['Fecha'] != row_orig['Fecha'] or row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor'] or row['Cancelado'] != row_orig['Cancelado'] or str(row.get('Observaciones','')) != str(row_orig.get('Observaciones',''))):
+                                    st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Observaciones']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Observaciones']]
                                     
                                     if hoja and row['Patente'].upper() in patentes_sheet:
                                         fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
                                         try:
-                                            # Columnas corregidas a M, N, O y F
-                                            hoja.update_acell(f'M{fila_sheet}', "Si" if row['Recibido'] else "")
-                                            hoja.update_acell(f'N{fila_sheet}', "SI" if row['Fotos'] else "")
-                                            hoja.update_acell(f'O{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
+                                            # Actualizar Fecha (Col B)
+                                            hoja.update_acell(f'B{fila_sheet}', row['Fecha'].strftime('%d/%m/%Y'))
+                                            # Actualizar Recibido (Col N) y Fotos (Col O)
+                                            hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "NO")
+                                            hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "NO")
+                                            # Actualizar OR / Ticket (Col M)
+                                            hoja.update_acell(f'M{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
+                                            # Actualizar Asesor (Col F)
                                             hoja.update_acell(f'F{fila_sheet}', row['Asesor'])
+                                            
+                                            # Logica de Cancelación: Si tildaste cancelar, poner CANCELADO en A y sumar el motivo en I
+                                            obs_final = row['Observaciones'] if pd.notna(row['Observaciones']) else ""
+                                            if row['Cancelado']:
+                                                hoja.update_acell(f'A{fila_sheet}', "CANCELADO")
+                                                obs_final = "[CANCELADO] " + str(obs_final)
+                                            hoja.update_acell(f'I{fila_sheet}', obs_final)
+                                            
                                         except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
                                         
                         if not edited_sin.empty:
                             for idx, row in edited_sin.iterrows():
                                 if row.get('Eliminar', False): 
                                     indices_a_borrar.append(idx)
-                                    # Si lo marcamos con la papelera, buscamos en qué fila del Sheet está
                                     if hoja and row['Patente'].upper() in patentes_sheet:
                                         fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
                                         filas_a_borrar_sheet.append(fila_sheet)
                                 else:
                                     row_orig = df_sin.loc[idx]
-                                    if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor'] or row['Cancelado'] != row_orig['Cancelado']):
-                                        st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado']]
+                                    if (row['Fecha'] != row_orig['Fecha'] or row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['OR']) != str(row_orig['OR']) or row['Asesor'] != row_orig['Asesor'] or row['Cancelado'] != row_orig['Cancelado'] or str(row.get('Observaciones','')) != str(row_orig.get('Observaciones',''))):
+                                        st.session_state.memoria_turnos_v11.loc[idx, ['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Observaciones']] = row[['Fecha', 'Hora', 'Asesor', 'Recibido', 'Fotos', 'OR', 'Cancelado', 'Observaciones']]
                                         if hoja and row['Patente'].upper() in patentes_sheet:
                                             fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
                                             try:
-                                                hoja.update_acell(f'M{fila_sheet}', "Si" if row['Recibido'] else "")
-                                                hoja.update_acell(f'N{fila_sheet}', "SI" if row['Fotos'] else "")
-                                                hoja.update_acell(f'O{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
+                                                hoja.update_acell(f'B{fila_sheet}', row['Fecha'].strftime('%d/%m/%Y'))
+                                                hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "NO")
+                                                hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "NO")
+                                                hoja.update_acell(f'M{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
                                                 hoja.update_acell(f'F{fila_sheet}', row['Asesor'])
+                                                
+                                                obs_final = row['Observaciones'] if pd.notna(row['Observaciones']) else ""
+                                                if row['Cancelado']:
+                                                    hoja.update_acell(f'A{fila_sheet}', "CANCELADO")
+                                                    obs_final = "[CANCELADO] " + str(obs_final)
+                                                hoja.update_acell(f'I{fila_sheet}', obs_final)
                                             except: pass
                         
                         # --- MAGIA NUEVA: Borrar físicamente del Google Sheets ---
                         if hoja and filas_a_borrar_sheet:
-                            # Ordenamos de mayor a menor para borrar de abajo hacia arriba
                             filas_a_borrar_sheet.sort(reverse=True)
                             for f in filas_a_borrar_sheet:
                                 try:
@@ -692,7 +700,7 @@ with col_add:
                         if indices_a_borrar: 
                             st.session_state.memoria_turnos_v11.drop(indices_a_borrar, inplace=True)
                             
-                        st.success("¡Cambios y eliminaciones guardados correctamente en Google Sheets!"); time.sleep(1.5); st.rerun() 
+                        st.success("¡Cambios y reprogramaciones guardados correctamente en Google Sheets!"); time.sleep(1.5); st.rerun() 
 
             st.write("#### 🏁 Turnos Completados (Ya tienen OR)")
             if not df_recibidos.empty:
@@ -708,9 +716,9 @@ with col_add:
                                 if hoja and row['Patente'].upper() in patentes_sheet:
                                     fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
                                     try:
-                                        hoja.update_acell(f'N{fila_sheet}', "Si" if row['Recibido'] else "")
-                                        hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
-                                        hoja.update_acell(f'P{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
+                                        hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "NO")
+                                        hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "NO")
+                                        hoja.update_acell(f'M{fila_sheet}', row['OR'] if pd.notna(row['OR']) else "")
                                     except: pass
                         st.success("Correcciones aplicadas y guardadas."); time.sleep(1.5); st.rerun()
 
@@ -870,7 +878,6 @@ with tab_prog:
         st.markdown("## 📑 Listado de Vehículos en Taller (Prioridad por Fecha Promesa)")
         st.write("Columnas actuales: Fechas clave, Vehículo, Asesor, Paños, Monto Pendiente (sólo en terminados) y Observaciones.")
         
-        # Dividimos los estados para mayor claridad y agregamos el Entregado Final
         estados_map = [
             ("⏳ EN PROCESO", "PROCESO"), 
             ("⛔ DETENIDOS", "DETENIDO"), 
@@ -888,9 +895,7 @@ with tab_prog:
             def dibujar_tabla(col, grupo_nombre, m_key):
                 d_g = df_prog_filtrado[df_prog_filtrado['Grupo'] == grupo_nombre].copy()
                 
-                # Lógica especial para separar los dos tipos de entregados
                 if m_key == "ENTREGADO_FINAL":
-                    # Busca "ENTREGADO" pero excluye los que dicen "PEND"
                     d_e = d_g[(d_g['Estado_Taller'].str.contains("ENTREGADO", na=False)) & (~d_g['Estado_Taller'].str.contains("PEND", na=False))].copy()
                 else:
                     d_e = d_g[d_g['Estado_Taller'].str.contains(m_key, na=False)].copy()
@@ -904,7 +909,6 @@ with tab_prog:
                         d_e['1ra Promesa'] = d_e['Fecha_Ticket'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
                         d_e['F. Entrega'] = d_e['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m') if pd.notna(x) else "")
                         
-                        # Si es alguno de los terminados o entregados, mostramos la plata
                         if "TERM" in m_key or "ENTREGADO" in m_key:
                             cols_to_show = ['F. Ingreso', '1ra Promesa', 'F. Entrega', 'Hora_Entrega', 'Patente', 'Vehiculo', 'Asesor', 'Paños', 'Precio', 'Observaciones']
                         else:
@@ -1124,12 +1128,10 @@ with tab_fac:
         
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- SECCIÓN MOVIDA: ALERTAS VISUALES DE PLATA INMOVILIZADA ---
         df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
         df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
         df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
 
-        # --- ALERTAS VISUALES DE PLATA INMOVILIZADA (Sincronizadas con el "SI") ---
         df_alertas_si = df_analisis[df_analisis['Estado_Resumen'] == 'Aprobado (SI)']
 
         df_tpf = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
@@ -1144,7 +1146,6 @@ with tab_fac:
         
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- RADIOGRAFÍA DEL SI ---
         with st.expander("🔍 Radiografía del Aprobado (¿Dónde está la plata del 'SI'?)", expanded=True):
             st.write("Desglose exacto de los autos que tienen 'SI' cargado y cómo componen las tarjetas de arriba.")
             
@@ -1153,7 +1154,6 @@ with tab_fac:
                 est = str(row['Estado_Taller']).upper()
                 f_prom = row['Fecha_Promesa_Disp']
                 
-                # Sincronizamos las categorías con las tarjetas
                 if 'ENTREGADO' in est: return '1. 🚚 Entregados (Pendiente Facturar)'
                 if 'TERM PEND ENTREG' in est: return '2. ⏳ Terminados (Pendiente Entregar)'
                 if 'TERM' in est: return '3. ⚠️ Terminados (Pendiente Facturar)'
@@ -1177,11 +1177,9 @@ with tab_fac:
                 "Pesos ($)": st.column_config.TextColumn("Monto Esperado")
             })
 
-        # --- RADAR MES SIGUIENTE (NO) ---
         st.write("### 🔭 Radar del Mes Siguiente (Estado 'NO')")
         st.write("Vehículos marcados con estado **'NO'** en la facturación. Esto representa el colchón de trabajo/plata que se patea y asegura para arrancar el próximo mes.")
         
-        # Filtramos los 'NO' de la base global
         df_no = df_completo[df_completo['Estado_Fac'] == 'NO'].copy()
         
         if not df_no.empty:
@@ -1196,7 +1194,6 @@ with tab_fac:
             
             with st.expander("Ver detalle de los autos marcados con 'NO'"):
                 df_no_show = df_no.copy()
-                # Formateamos la fecha para que se vea linda
                 df_no_show['Fecha Promesa'] = df_no_show['Fecha_Promesa_Disp'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else "Sin Fecha")
                 
                 st.dataframe(df_no_show[['Fecha Promesa', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Grupo', 'Paños', 'Precio']], hide_index=True, use_container_width=True, column_config={"Precio": st.column_config.NumberColumn("Precio ($)", format="$ %d")})
@@ -1205,7 +1202,6 @@ with tab_fac:
             
         st.divider()
 
-        # --- CURVA DE PROYECCIÓN DE INGRESOS ---
         if mes_filtro != "TODOS":
             st.markdown("### 📈 Curva de Producción y Facturación del Mes")
             st.write("Muestra cómo se acumula la plata. **Línea Gris:** Lo que la gerencia pide por día de forma lineal. **Línea Celeste:** Lo que *deberíamos* facturar si cumplimos con las Fechas Prometidas. **Línea Verde:** Lo que *realmente* ya terminamos o entregamos hasta hoy. **Si la Verde va por debajo de la Celeste, venimos atrasados.**")
