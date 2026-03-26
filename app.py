@@ -528,72 +528,79 @@ with tab_turnos:
                 val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
                 nueva_referencia = c_ref.text_input("Número de Referencia (OR)")
 
-                with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
-            if "procesando_envio" not in st.session_state:
-                st.session_state.procesando_envio = False
+                # --- DENTRO DE LA PESTAÑA 1, EN LA COLUMNA col_add ---
+with col_add:
+    with st.expander("➕ Ingresar vehículo SIN TURNO (Walk-in)"):
+        # Todo este bloque debe tener una sangría (indentación) extra hacia la derecha
+        if "procesando_envio" not in st.session_state:
+            st.session_state.procesando_envio = False
 
-            with st.form("form_sin_turno", clear_on_submit=True):
-                c1, c2, c3 = st.columns(3)
-                nueva_patente = c1.text_input("Patente *")
-                nuevo_vehiculo = c2.text_input("Vehículo *")
-                nuevo_cliente = c3.selectbox("Cliente", CLIENTES_LISTA)
-                
-                c4, c5, c6 = st.columns(3)
-                nuevo_seguro = c4.text_input("Seguro / Compañía")
-                nuevo_precio = c5.text_input("Precio Estimado ($)")
-                nuevo_panos = c6.text_input("Paños (Ej: 2)")
-                
-                c7, c8, c9 = st.columns(3)
-                nuevo_asesor = c7.selectbox("Asesor", ASESORES_LISTA)
-                nueva_referencia = c8.text_input("N° Ticket / Referencia")
-                nueva_obs = c9.text_input("Observaciones")
+        with st.form("form_sin_turno", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            nueva_patente = c1.text_input("Patente *")
+            nuevo_vehiculo = c2.text_input("Vehículo *")
+            nuevo_cliente = c3.selectbox("Cliente", CLIENTES_LISTA)
+            
+            c4, c5, c6 = st.columns(3)
+            nuevo_seguro = c4.text_input("Seguro / Compañía")
+            nuevo_precio = c5.text_input("Precio Estimado ($)")
+            nuevo_panos = c6.text_input("Paños (Ej: 2)")
+            
+            c7, c8, c9 = st.columns(3)
+            nuevo_asesor = c7.selectbox("Asesor", ASESORES_LISTA)
+            nueva_referencia = c8.text_input("N° Ticket / Referencia")
+            nueva_obs = c9.text_input("Observaciones")
 
-                c_chk1, c_chk2 = st.columns(2)
-                val_recibido_bool = c_chk1.checkbox("✅ ¿Vehículo Recibido?")
-                val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
+            c_chk1, c_chk2 = st.columns(2)
+            val_recibido_bool = c_chk1.checkbox("✅ ¿Vehículo Recibido?")
+            val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
 
-                if st.form_submit_button("Registrar Ingreso Directo"):
-                    if not st.session_state.procesando_envio:
-                        if nueva_patente and nuevo_vehiculo:
-                            st.session_state.procesando_envio = True
-                            if hoja is not None:
-                                try:
-                                    fecha_hoy = f_inicio.strftime('%d/%m/%Y')
-                                    # MAPA PARA LAS 16 COLUMNAS (A a la P)
-                                    # A:Turno, B:Fecha, C:Hora, D:Vehiculo, E:Patente, F:Asesor, G:Asesor, H:Paños...
-                                    nueva_fila = [
-                                        "NO",           # A: TURNO (Marcamos NO porque es Walk-in)
-                                        fecha_hoy,      # B: FECHA
-                                        "-",            # C: HORA
-                                        nuevo_vehiculo.upper(), # D: VEHICULO
-                                        nueva_patente.upper(),  # E: PATENTE
-                                        nuevo_asesor,   # F: ASESOR
-                                        nuevo_asesor,   # G: ASESOR (Repetido según tu imagen)
-                                        nuevo_panos,    # H: PAÑOS
-                                        nueva_obs,      # I: OBSERVACIONES
-                                        "",             # J: TIEMPO ENTREGA
-                                        nuevo_cliente,  # K: CLIENTE
-                                        nuevo_seguro.upper(), # L: SEGURO
-                                        nueva_referencia, # M: N° TICKET
-                                        "SI" if val_recibido_bool else "NO", # N: RECIBIDO
-                                        "SI" if val_foto_bool else "NO",     # O: FOTOS
-                                        nueva_referencia  # P: N° REFERENCIA
-                                    ]
-                                    
-                                    hoja.append_row(nueva_fila)
-                                    st.cache_data.clear()
-                                    if 'memoria_turnos_v11' in st.session_state:
-                                        del st.session_state['memoria_turnos_v11']
-                                    
-                                    st.success(f"¡Vehículo {nueva_patente.upper()} ingresado!")
-                                    time.sleep(1)
-                                    st.session_state.procesando_envio = False
-                                    st.rerun()
-                                except Exception as e:
-                                    st.session_state.procesando_envio = False
-                                    st.error(f"Error: {e}")
-                        else:
-                            st.warning("Faltan datos obligatorios.")
+            # Botón de envío
+            enviado = st.form_submit_button("Registrar Ingreso Directo")
+            
+            if enviado:
+                if not st.session_state.procesando_envio:
+                    if nueva_patente and nuevo_vehiculo:
+                        st.session_state.procesando_envio = True
+                        if hoja is not None:
+                            try:
+                                # Usamos f_inicio que ya está definido arriba en tu código
+                                fecha_hoy = f_inicio.strftime('%d/%m/%Y')
+                                
+                                # MAPA EXACTO DE 16 COLUMNAS (A a la P)
+                                nueva_fila = [
+                                    "NO",           # A: TURNO
+                                    fecha_hoy,      # B: FECHA
+                                    "-",            # C: HORA
+                                    nuevo_vehiculo.upper(), # D: VEHICULO
+                                    nueva_patente.upper(),  # E: PATENTE
+                                    nuevo_asesor,   # F: ASESOR
+                                    nuevo_asesor,   # G: ASESOR
+                                    nuevo_panos,    # H: PAÑOS
+                                    nueva_obs,      # I: OBSERVACIONES
+                                    "",             # J: TIEMPO ENTREGA
+                                    nuevo_cliente,  # K: CLIENTE
+                                    nuevo_seguro.upper(), # L: SEGURO
+                                    nueva_referencia, # M: N° TICKET
+                                    "SI" if val_recibido_bool else "NO", # N: RECIBIDO
+                                    "SI" if val_foto_bool else "NO",     # O: FOTOS
+                                    nueva_referencia  # P: N° REFERENCIA
+                                ]
+                                
+                                hoja.append_row(nueva_fila)
+                                st.cache_data.clear()
+                                if 'memoria_turnos_v11' in st.session_state:
+                                    del st.session_state['memoria_turnos_v11']
+                                
+                                st.success(f"¡Vehículo {nueva_patente.upper()} ingresado!")
+                                time.sleep(1)
+                                st.session_state.procesando_envio = False
+                                st.rerun()
+                            except Exception as e:
+                                st.session_state.procesando_envio = False
+                                st.error(f"Error al conectar con Sheets: {e}")
+                    else:
+                        st.warning("Por favor, completa Patente y Vehículo.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
