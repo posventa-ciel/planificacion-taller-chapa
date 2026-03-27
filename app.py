@@ -1461,9 +1461,6 @@ with tab_fac:
         else:
             st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
 
-else:
-            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
-
         # --- NUEVO MÓDULO DE AUDITORÍA (PEGAR ACÁ) ---
         st.divider()
         st.markdown("### 🚨 Auditoría de Carga (Detectores de Errores)")
