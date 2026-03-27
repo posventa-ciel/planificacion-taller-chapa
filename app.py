@@ -1508,32 +1508,58 @@ with tab_kpi:
         st.subheader("📊 Panel de Control y KPIs del Taller")
         
         # --- CONFIGURACIÓN DE VALOR DE REFERENCIA ---
-        st.markdown("#### 🏷️ Valor de Referencia del Seguro")
-        c_ref1, c_ref2 = st.columns([1, 3])
-        with c_ref1:
-            precio_base_iva = st.number_input("Precio Paño Referencia (Con IVA)", value=192000.0, step=1000.0)
-            valor_ref_neto = precio_base_iva / 1.21
-        with c_ref2:
-            st.info(f"**Valor Neto Objetivo (Sin IVA): {formato_pesos(valor_ref_neto)}**\n\nEste es el valor de corte. Todo lo que se venda por debajo de este promedio indica pérdida de rentabilidad frente al acuerdo de seguros, y lo que esté por encima es ganancia o venta a particulares.")
-            
-        st.divider()
+        with st.container(border=True):
+            st.markdown("#### 🏷️ Parámetros de Referencia")
+            c_ref1, c_ref2, c_ref3 = st.columns([1, 1, 2])
+            with c_ref1:
+                precio_base_iva = st.number_input("Precio Paño Seguro (Con IVA)", value=192000.0, step=1000.0)
+            with c_ref2:
+                valor_ref_neto = precio_base_iva / 1.21
+                st.markdown(f'<div class="metric-card" style="min-height: 80px; padding: 10px; margin-bottom: 0;"><div class="metric-title">Valor Neto Objetivo (Sin IVA)</div><div class="metric-value-money" style="font-size: 1.4rem; color: #6f42c1;">{formato_pesos(valor_ref_neto)}</div></div>', unsafe_allow_html=True)
+            with c_ref3:
+                st.caption("Todo lo que se venda por debajo de este promedio indica pérdida de rentabilidad frente al acuerdo. Lo que esté por encima es ganancia extra o venta de mayor margen.")
 
         # Filtramos autos válidos (que tengan precio y paños para no dividir por cero)
         df_kpi = df[(df['Precio'] > 0) & (df['Paños'] > 0)].copy()
         
         if not df_kpi.empty:
-            st.markdown("### 💰 1. Rendimiento del Paño (Precio Promedio de Venta)")
-            st.write("Analizamos a cuánto se está cerrando realmente cada paño. Cruza los pesos totales contra los paños totales asignados.")
             
+            # --- TARJETAS GLOBALES ---
+            st.markdown("### 📈 Indicadores Globales del Período")
+            ticket_promedio_global = df_kpi['Precio'].sum() / len(df_kpi)
+            intensidad_global = df_kpi['Paños'].sum() / len(df_kpi)
+            precio_prom_pano_global = df_kpi['Precio'].sum() / df_kpi['Paños'].sum()
+            brecha_global = precio_prom_pano_global - valor_ref_neto
+
+            c_g1, c_g2, c_g3, c_g4 = st.columns(4)
+            
+            color_brecha = "#28a745" if brecha_global >= 0 else "#dc3545"
+            signo_brecha = "+" if brecha_global >= 0 else ""
+
+            c_g1.markdown(f'<div class="metric-card"><div class="metric-title">Precio Prom. Real x Paño</div><div class="metric-value-money">{formato_pesos(precio_prom_pano_global)}</div><div style="color:{color_brecha}; font-weight:bold; font-size:0.9rem; margin-top:5px;">{signo_brecha}{formato_pesos(brecha_global)} vs Seguro</div></div>', unsafe_allow_html=True)
+            c_g2.markdown(f'<div class="metric-card"><div class="metric-title">Ticket Promedio ($/Auto)</div><div class="metric-value-money" style="color:#00235d;">{formato_pesos(ticket_promedio_global)}</div></div>', unsafe_allow_html=True)
+            c_g3.markdown(f'<div class="metric-card"><div class="metric-title">Intensidad (Paños/Auto)</div><div class="metric-value-number" style="color:#17a2b8;">{intensidad_global:.2f}</div></div>', unsafe_allow_html=True)
+            c_g4.markdown(f'<div class="metric-card"><div class="metric-title">Volumen (Autos Computados)</div><div class="metric-value-number" style="color:#6c757d;">{len(df_kpi)}</div></div>', unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Función para formatear visualmente la brecha con semáforos
+            def formato_alerta(val):
+                if pd.isna(val): return ""
+                if val < 0:
+                    return f"🔴 -$ {abs(val):,.0f}".replace(',', '.')
+                else:
+                    return f"🟢 +$ {abs(val):,.0f}".replace(',', '.')
+
+            # --- TABLAS POR GRUPO Y ASESOR ---
             # KPI POR ASESOR
             kpi_asesor = df_kpi.groupby('Asesor').agg(
                 Autos=('Patente', 'count'),
                 Paños_Totales=('Paños', 'sum'),
                 Facturación_Total=('Precio', 'sum')
             ).reset_index()
-            
             kpi_asesor['Precio_Promedio_Paño'] = kpi_asesor['Facturación_Total'] / kpi_asesor['Paños_Totales']
-            kpi_asesor['Diferencia_vs_Ref'] = kpi_asesor['Precio_Promedio_Paño'] - valor_ref_neto
+            kpi_asesor['Brecha'] = (kpi_asesor['Precio_Promedio_Paño'] - valor_ref_neto).apply(formato_alerta)
             
             # KPI POR GRUPO
             kpi_grupo = df_kpi.groupby('Grupo').agg(
@@ -1541,86 +1567,71 @@ with tab_kpi:
                 Paños_Totales=('Paños', 'sum'),
                 Facturación_Total=('Precio', 'sum')
             ).reset_index()
-            
             kpi_grupo['Precio_Promedio_Paño'] = kpi_grupo['Facturación_Total'] / kpi_grupo['Paños_Totales']
-            kpi_grupo['Diferencia_vs_Ref'] = kpi_grupo['Precio_Promedio_Paño'] - valor_ref_neto
+            kpi_grupo['Brecha'] = (kpi_grupo['Precio_Promedio_Paño'] - valor_ref_neto).apply(formato_alerta)
 
             col_kpi1, col_kpi2 = st.columns(2)
             
             with col_kpi1:
-                st.markdown("**Por Asesor:**")
-                # Formateamos visualmente para que sea fácil de leer
-                vista_asesor = kpi_asesor[['Asesor', 'Precio_Promedio_Paño', 'Diferencia_vs_Ref', 'Autos']].sort_values('Precio_Promedio_Paño', ascending=False)
-                st.dataframe(
-                    vista_asesor,
-                    hide_index=True,
-                    use_container_width=True,
-                    column_config={
-                        "Precio_Promedio_Paño": st.column_config.NumberColumn("Precio Prom. x Paño", format="$ %.0f"),
-                        "Diferencia_vs_Ref": st.column_config.NumberColumn("Brecha vs. Seguro", format="$ %.0f"),
-                        "Autos": st.column_config.NumberColumn("Volumen (Autos)")
-                    }
-                )
+                with st.container(border=True):
+                    st.markdown("#### 👔 Rendimiento por Asesor")
+                    vista_asesor = kpi_asesor[['Asesor', 'Precio_Promedio_Paño', 'Brecha', 'Autos']].sort_values('Precio_Promedio_Paño', ascending=False)
+                    st.dataframe(
+                        vista_asesor,
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "Precio_Promedio_Paño": st.column_config.NumberColumn("Precio Prom. x Paño", format="$ %.0f"),
+                            "Brecha": st.column_config.TextColumn("Brecha vs. Seguro"),
+                            "Autos": st.column_config.NumberColumn("Autos")
+                        }
+                    )
                 
             with col_kpi2:
-                st.markdown("**Por Grupo de Producción:**")
-                vista_grupo = kpi_grupo[['Grupo', 'Precio_Promedio_Paño', 'Diferencia_vs_Ref', 'Autos']].sort_values('Precio_Promedio_Paño', ascending=False)
-                st.dataframe(
-                    vista_grupo,
-                    hide_index=True,
-                    use_container_width=True,
-                    column_config={
-                        "Precio_Promedio_Paño": st.column_config.NumberColumn("Precio Prom. x Paño", format="$ %.0f"),
-                        "Diferencia_vs_Ref": st.column_config.NumberColumn("Brecha vs. Seguro", format="$ %.0f"),
-                        "Autos": st.column_config.NumberColumn("Volumen (Autos)")
-                    }
-                )
+                with st.container(border=True):
+                    st.markdown("#### 🏭 Rendimiento por Sector")
+                    vista_grupo = kpi_grupo[['Grupo', 'Precio_Promedio_Paño', 'Brecha', 'Autos']].sort_values('Precio_Promedio_Paño', ascending=False)
+                    st.dataframe(
+                        vista_grupo,
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "Precio_Promedio_Paño": st.column_config.NumberColumn("Precio Prom. x Paño", format="$ %.0f"),
+                            "Brecha": st.column_config.TextColumn("Brecha vs. Seguro"),
+                            "Autos": st.column_config.NumberColumn("Autos")
+                        }
+                    )
                 
-            st.divider()
-            
-            st.markdown("### ⚙️ 2. Eficiencia y Productividad (Ticket e Intensidad)")
-            st.write("Mide el volumen de daño y dinero que procesa cada sector o asesor por cada vehículo ingresado.")
-            
-            # Calculamos las métricas globales
-            ticket_promedio_global = df_kpi['Precio'].sum() / len(df_kpi)
-            intensidad_global = df_kpi['Paños'].sum() / len(df_kpi)
-            
-            c_prod1, c_prod2, c_prod3 = st.columns(3)
-            c_prod1.metric("Ticket Promedio Global ($/Auto)", formato_pesos(ticket_promedio_global))
-            c_prod2.metric("Intensidad Global (Paños/Auto)", f"{intensidad_global:.2f} paños")
-            c_prod3.metric("Autos Computados para el KPI", f"{len(df_kpi)} unid.")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
+            # --- GRÁFICOS ---
             c_graf1, c_graf2 = st.columns(2)
             
             with c_graf1:
-                # Gráfico de Intensidad por Grupo
-                kpi_grupo['Intensidad'] = kpi_grupo['Paños_Totales'] / kpi_grupo['Autos']
-                fig_intensidad = px.bar(
-                    kpi_grupo, x='Grupo', y='Intensidad', 
-                    text_auto='.2f', title='📦 Severidad / Intensidad del Daño (Paños por Auto)',
-                    color_discrete_sequence=['#17a2b8']
-                )
-                fig_intensidad.update_layout(xaxis_title="", yaxis_title="Promedio de Paños")
-                st.plotly_chart(fig_intensidad, use_container_width=True)
+                with st.container(border=True):
+                    # Gráfico de Intensidad por Grupo
+                    kpi_grupo['Intensidad'] = kpi_grupo['Paños_Totales'] / kpi_grupo['Autos']
+                    fig_intensidad = px.bar(
+                        kpi_grupo, x='Grupo', y='Intensidad', 
+                        text_auto='.2f', title='📦 Intensidad del Daño (Paños por Auto)',
+                        color_discrete_sequence=['#17a2b8']
+                    )
+                    fig_intensidad.update_layout(xaxis_title="", yaxis_title="Promedio de Paños")
+                    st.plotly_chart(fig_intensidad, use_container_width=True)
 
             with c_graf2:
-                # Gráfico de Ticket Promedio por Asesor
-                kpi_asesor['Ticket_Promedio'] = kpi_asesor['Facturación_Total'] / kpi_asesor['Autos']
-                fig_ticket = px.bar(
-                    kpi_asesor, x='Asesor', y='Ticket_Promedio', 
-                    text_auto='$.3s', title='💰 Ticket Promedio de Venta ($ por Auto)',
-                    color_discrete_sequence=['#28a745']
-                )
-                fig_ticket.update_layout(xaxis_title="", yaxis_title="Monto Promedio")
-                st.plotly_chart(fig_ticket, use_container_width=True)
+                with st.container(border=True):
+                    # Gráfico de Ticket Promedio por Asesor
+                    kpi_asesor['Ticket_Promedio'] = kpi_asesor['Facturación_Total'] / kpi_asesor['Autos']
+                    fig_ticket = px.bar(
+                        kpi_asesor, x='Asesor', y='Ticket_Promedio', 
+                        text_auto='$.3s', title='💰 Ticket Promedio de Venta ($ por Auto)',
+                        color_discrete_sequence=['#28a745']
+                    )
+                    fig_ticket.update_layout(xaxis_title="", yaxis_title="Monto Promedio")
+                    st.plotly_chart(fig_ticket, use_container_width=True)
 
         else:
             st.warning("No hay suficientes datos válidos (con paños y precios mayores a cero) para calcular los KPIs de rendimiento.")
-    else:
-        st.info("Cargando datos maestros...")
-
+            
 # ==========================================
 # PESTAÑA 6: HISTÓRICOS
 # ==========================================
