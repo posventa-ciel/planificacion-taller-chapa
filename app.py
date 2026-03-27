@@ -733,8 +733,8 @@ with tab_turnos:
                                             
                         st.cache_data.clear()
                         # Usamos el truco del nombre de variable para refrescar la memoria
-                        if 'memoria_turnos_v13' in st.session_state:
-                            del st.session_state['memoria_turnos_v13']
+                        if 'memoria_turnos_v14' in st.session_state:
+                            del st.session_state['memoria_turnos_v14']
                             
                         st.success("¡Cambios y recepciones guardadas correctamente en Google Sheets!"); time.sleep(1.5); st.rerun()
 
