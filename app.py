@@ -98,16 +98,35 @@ def dias_habiles_restantes_mes(anio, mes):
 def parsear_fecha_español(texto):
     if pd.isna(texto) or str(texto).strip() == "": return None 
     texto = str(texto).lower().strip()
+    
+    # 1. Buscar formato con letras DD-MMM o DD/MMM (ej: 25-mar o 25/mar)
+    meses_abrev = {'ene': 1, 'feb': 2, 'mar': 3, 'abr': 4, 'may': 5, 'jun': 6,
+                   'jul': 7, 'ago': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dic': 12}
+    
+    match_abrev = re.search(r'(\d{1,2})[-/]([a-z]{3})', texto)
+    if match_abrev:
+        dia = int(match_abrev.groups()[0])
+        mes_str = match_abrev.groups()[1]
+        mes_num = meses_abrev.get(mes_str)
+        if mes_num:
+            return datetime(datetime.now().year, mes_num, dia)
+
+    # 2. Buscar formato normal DD/MM o DD-MM (ej: 25/03)
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
     if match_dm: return datetime(datetime.now().year, int(match_dm.groups()[1]), int(match_dm.groups()[0]))
+    
+    # 3. Intentar lectura automática
     try:
         res = pd.to_datetime(texto, dayfirst=True)
         if pd.notna(res): return res.to_pydatetime()
     except: pass
+    
+    # 4. Formato largo (ej: 25 de marzo de 2026)
     try:
         match = re.search(r'(\d+)\s+de\s+([a-z]+)\s+de\s+(\d+)', texto)
         if match: return datetime(int(match.groups()[2]), MESES_ES.get(match.groups()[1], 1), int(match.groups()[0]))
     except: pass
+    
     return None
 
 def clasificar_abc(panos):
