@@ -635,24 +635,29 @@ with tab_turnos:
                 df_sin = df_pendientes[df_pendientes['Tipo'] == '🚶‍♂️ SIN TURNO']
                 edited_prog, edited_sin = pd.DataFrame(), pd.DataFrame()
                 
-                # CONFIGURACIÓN DEL EDITOR (Permite Reprogramar y Cancelar con Motivo)
+                # CONFIGURACIÓN DEL EDITOR (Agregamos Observaciones con el nuevo orden)
                 conf_columnas = {
-                    "Fecha": st.column_config.DateColumn("📅 Fecha (Reprogramar)", format="DD/MM/YYYY"), 
+                    "Fecha": st.column_config.DateColumn("📅 Fecha", format="DD/MM/YYYY"), 
                     "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), 
+                    "Ticket": st.column_config.TextColumn("🎫 N° Ticket", max_chars=15), 
+                    "Observaciones": st.column_config.TextColumn("💬 Observaciones", width="medium"), 
                     "Recibido": st.column_config.CheckboxColumn("✅ Recibido", default=False), 
                     "Fotos": st.column_config.CheckboxColumn("📸 Fotos", default=False), 
-                    "Ticket": st.column_config.TextColumn("🎫 N° Ticket", max_chars=15), 
                     "Referencia": st.column_config.TextColumn("🏷️ N° Referencia", max_chars=15), 
                     "Cancelado": st.column_config.CheckboxColumn("❌ Cancelar", default=False),
                     "Motivo_Cancelacion": st.column_config.TextColumn("📝 Motivo Cancelación (Col Q)", width="medium")
                 }
                 
+                # CREAMOS EL ORDEN LÓGICO DE LECTURA -> ACCIÓN
+                orden_columnas = ['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Ticket', 'Observaciones', 'Recibido', 'Fotos', 'Referencia', 'Cancelado', 'Motivo_Cancelacion']
+                orden_columnas_sin = orden_columnas + ['Eliminar']
+                
                 if not df_prog.empty:
-                    st.caption("📅 Programados (Doble clic en la fecha para reprogramar)")
-                    edited_prog = st.data_editor(df_prog[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Recibido', 'Fotos', 'Ticket', 'Referencia', 'Cancelado', 'Motivo_Cancelacion']], column_config=conf_columnas, hide_index=True, use_container_width=True, key="editor_prog")
+                    st.caption("📅 Programados (Doble clic en la celda para editar)")
+                    edited_prog = st.data_editor(df_prog[orden_columnas], column_config=conf_columnas, hide_index=True, use_container_width=True, key="editor_prog")
                 if not df_sin.empty:
                     st.caption("🚶‍♂️ Ingresos Adicionales (Sin Turno)")
-                    edited_sin = st.data_editor(df_sin[['Fecha', 'Hora', 'Patente', 'Vehiculo', 'Cliente', 'Asesor', 'Recibido', 'Fotos', 'Ticket', 'Referencia', 'Cancelado', 'Motivo_Cancelacion', 'Eliminar']], column_config=conf_columnas, hide_index=True, use_container_width=True, key="editor_sin")
+                    edited_sin = st.data_editor(df_sin[orden_columnas_sin], column_config=conf_columnas, hide_index=True, use_container_width=True, key="editor_sin")
 
             if st.button("💾 Guardar Cambios e Ingresos"):
                     with st.spinner("Conectando con Google Sheets y sincronizando..."):
@@ -660,62 +665,47 @@ with tab_turnos:
                         indices_a_borrar = []
                         filas_a_borrar_sheet = [] 
                         
+                        # Función auxiliar para no repetir código al guardar
+                        def procesar_guardado_fila(row, row_orig):
+                            if (row['Fecha'] != row_orig['Fecha'] or row['Recibido'] != row_orig['Recibido'] or 
+                                row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row_orig['Ticket']) or 
+                                str(row['Referencia']) != str(row_orig['Referencia']) or row['Asesor'] != row_orig['Asesor'] or 
+                                row['Cancelado'] != row_orig['Cancelado'] or 
+                                str(row.get('Motivo_Cancelacion','')) != str(row_orig.get('Motivo_Cancelacion','')) or
+                                str(row.get('Observaciones','')) != str(row_orig.get('Observaciones',''))):
+                                
+                                if hoja and row['Patente'].upper() in patentes_sheet:
+                                    fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
+                                    try:
+                                        hoja.update_acell(f'B{fila_sheet}', row['Fecha'].strftime('%d/%m/%Y'))
+                                        hoja.update_acell(f'F{fila_sheet}', row['Asesor'])
+                                        hoja.update_acell(f'I{fila_sheet}', str(row['Observaciones']) if pd.notna(row['Observaciones']) else "")
+                                        hoja.update_acell(f'M{fila_sheet}', str(row['Ticket']) if pd.notna(row['Ticket']) else "")
+                                        hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "")
+                                        hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
+                                        hoja.update_acell(f'P{fila_sheet}', str(row['Referencia']) if pd.notna(row['Referencia']) else "")
+                                        
+                                        if row['Cancelado']:
+                                            hoja.update_acell(f'A{fila_sheet}', "CANCELADO")
+                                            hoja.update_acell(f'Q{fila_sheet}', str(row['Motivo_Cancelacion']) if pd.notna(row['Motivo_Cancelacion']) else "")
+                                        elif row_orig['Cancelado'] and not row['Cancelado']:
+                                            hoja.update_acell(f'A{fila_sheet}', "N" if row_orig['Tipo'] == '🚶‍♂️ SIN TURNO' else "SI") 
+                                            hoja.update_acell(f'Q{fila_sheet}', "")
+                                    except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
+
                         if not edited_prog.empty:
                             for idx, row in edited_prog.iterrows():
-                                row_orig = df_prog.loc[idx]
-                                if (row['Fecha'] != row_orig['Fecha'] or row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row_orig['Ticket']) or str(row['Referencia']) != str(row_orig['Referencia']) or row['Asesor'] != row_orig['Asesor'] or row['Cancelado'] != row_orig['Cancelado'] or str(row.get('Motivo_Cancelacion','')) != str(row_orig.get('Motivo_Cancelacion',''))):
-                                    
-                                    if hoja and row['Patente'].upper() in patentes_sheet:
-                                        fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
-                                        try:
-                                            # Actualizar Cambios Básicos
-                                            hoja.update_acell(f'B{fila_sheet}', row['Fecha'].strftime('%d/%m/%Y'))
-                                            hoja.update_acell(f'M{fila_sheet}', str(row['Ticket']) if pd.notna(row['Ticket']) else "")
-                                            hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "")
-                                            hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
-                                            hoja.update_acell(f'P{fila_sheet}', str(row['Referencia']) if pd.notna(row['Referencia']) else "")
-                                            hoja.update_acell(f'F{fila_sheet}', row['Asesor'])
-                                            
-                                            # Manejo de Cancelación (Col A y Q)
-                                            if row['Cancelado']:
-                                                hoja.update_acell(f'A{fila_sheet}', "CANCELADO")
-                                                hoja.update_acell(f'Q{fila_sheet}', str(row['Motivo_Cancelacion']) if pd.notna(row['Motivo_Cancelacion']) else "")
-                                            elif row_orig['Cancelado'] and not row['Cancelado']:
-                                                hoja.update_acell(f'A{fila_sheet}', "SI") # Revertir si se destilda
-                                                hoja.update_acell(f'Q{fila_sheet}', "")
-                                                
-                                        except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
+                                procesar_guardado_fila(row, df_prog.loc[idx])
                                         
                         if not edited_sin.empty:
                             for idx, row in edited_sin.iterrows():
                                 if row.get('Eliminar', False): 
                                     indices_a_borrar.append(idx)
                                     if hoja and row['Patente'].upper() in patentes_sheet:
-                                        fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
-                                        filas_a_borrar_sheet.append(fila_sheet)
+                                        filas_a_borrar_sheet.append(patentes_sheet.index(row['Patente'].upper()) + 1)
                                 else:
-                                    row_orig = df_sin.loc[idx]
-                                    if (row['Fecha'] != row_orig['Fecha'] or row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row_orig['Ticket']) or str(row['Referencia']) != str(row_orig['Referencia']) or row['Asesor'] != row_orig['Asesor'] or row['Cancelado'] != row_orig['Cancelado'] or str(row.get('Motivo_Cancelacion','')) != str(row_orig.get('Motivo_Cancelacion',''))):
-                                        
-                                        if hoja and row['Patente'].upper() in patentes_sheet:
-                                            fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
-                                            try:
-                                                hoja.update_acell(f'B{fila_sheet}', row['Fecha'].strftime('%d/%m/%Y'))
-                                                hoja.update_acell(f'M{fila_sheet}', str(row['Ticket']) if pd.notna(row['Ticket']) else "")
-                                                hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "")
-                                                hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
-                                                hoja.update_acell(f'P{fila_sheet}', str(row['Referencia']) if pd.notna(row['Referencia']) else "")
-                                                hoja.update_acell(f'F{fila_sheet}', row['Asesor'])
-                                                
-                                                if row['Cancelado']:
-                                                    hoja.update_acell(f'A{fila_sheet}', "CANCELADO")
-                                                    hoja.update_acell(f'Q{fila_sheet}', str(row['Motivo_Cancelacion']) if pd.notna(row['Motivo_Cancelacion']) else "")
-                                                elif row_orig['Cancelado'] and not row['Cancelado']:
-                                                    hoja.update_acell(f'A{fila_sheet}', "N") 
-                                                    hoja.update_acell(f'Q{fila_sheet}', "")
-                                            except: pass
+                                    procesar_guardado_fila(row, df_sin.loc[idx])
                         
-                        # Borrar físicamente si tildaron Eliminar
                         if hoja and filas_a_borrar_sheet:
                             filas_a_borrar_sheet.sort(reverse=True)
                             for f in filas_a_borrar_sheet:
@@ -723,10 +713,11 @@ with tab_turnos:
                                 except: pass
                                             
                         st.cache_data.clear()
-                        if 'memoria_turnos_v11' in st.session_state:
-                            del st.session_state['memoria_turnos_v11']
+                        # Usamos el truco del nombre de variable para refrescar la memoria
+                        if 'memoria_turnos_v13' in st.session_state:
+                            del st.session_state['memoria_turnos_v13']
                             
-                        st.success("¡Cambios y reprogramaciones guardados correctamente en Google Sheets!"); time.sleep(1.5); st.rerun() 
+                        st.success("¡Cambios y recepciones guardadas correctamente en Google Sheets!"); time.sleep(1.5); st.rerun()
 
             st.write("#### 🏁 Turnos Completados (Ya Recibidos)")
             if not df_recibidos.empty:
