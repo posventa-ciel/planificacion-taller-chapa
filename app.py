@@ -536,20 +536,23 @@ with tab_turnos:
                 nuevo_precio = c_pre.text_input("Precio ($)")
                 nuevo_panos = c_pan.text_input("Paños (Ej: 1.5)")
                 
-                # Fila 3
-                c_obs, c_ase = st.columns([2, 1])
-                nueva_obs = c_obs.text_input("Observaciones (Opcional)")
+                # Fila 3: Subimos Ticket y agregamos Tiempo de Entrega
+                c_ase, c_tic, c_tie = st.columns(3)
                 nuevo_asesor = c_ase.selectbox("Asesor", ASESORES_LISTA, index=0)
+                nuevo_ticket = c_tic.text_input("N° Ticket")
+                nuevo_tiempo = c_tie.text_input("Tiempo Entrega (Días)")
+                
+                # Fila 4: Observaciones a lo ancho
+                nueva_obs = st.text_input("Observaciones (Opcional)")
                 
                 st.write("---")
-                st.write("📋 Checklist de Recepción:")
+                st.write("📋 Checklist de Recepción (Al ingresar físicamente al taller):")
                 
-                # Fila 4
-                c_chk1, c_chk2, c_tic, c_ref = st.columns(4)
-                val_recibido_bool = c_chk1.checkbox("✅ ¿Recibido?")
-                val_foto_bool = c_chk2.checkbox("📸 ¿Fotos?")
-                nuevo_ticket = c_tic.text_input("N° Ticket")
-                nueva_referencia = c_ref.text_input("N° Referencia")
+                # Fila 5: Checklist
+                c_chk1, c_chk2, c_ref = st.columns([1, 1, 2])
+                val_recibido_bool = c_chk1.checkbox("✅ ¿Vehículo Recibido?")
+                val_foto_bool = c_chk2.checkbox("📸 ¿Fotos tomadas?")
+                nueva_referencia = c_ref.text_input("N° Referencia / OR")
 
                 enviado = st.form_submit_button("Agregar al Turnero y Guardar en Sheets")
                 
@@ -563,18 +566,18 @@ with tab_turnos:
                                     val_foto = "SI" if val_foto_bool else ""
                                     fecha_str = f_inicio.strftime('%d/%m/%Y')
                                     
-                                    # MAPA EXACTO DE 17 COLUMNAS (A a la Q)
+                                    # MAPA EXACTO DE 17 COLUMNAS (A a la Q) SEGÚN TU EXCEL
                                     nueva_fila = [
-                                        "N",                            # A: TURNO (N = Walk-in según tu foto)
+                                        "N",                            # A: TURNO (N = Sin Turno)
                                         str(fecha_str),                 # B: FECHA TURNO
                                         "-",                            # C: HORA TURNO
                                         str(nuevo_vehiculo).upper(),    # D: VEHICULO
                                         str(nueva_patente).upper(),     # E: PATENTE
                                         str(nuevo_asesor),              # F: ASESOR
-                                        str(nuevo_precio),              # G: PRECIO (CORREGIDO)
+                                        str(nuevo_precio),              # G: PRECIO
                                         str(nuevo_panos),               # H: PAÑOS
                                         str(nueva_obs),                 # I: OBSERVACIONES
-                                        "",                             # J: TIEMPO ENTREGA (DIAS)
+                                        str(nuevo_tiempo),              # J: TIEMPO ENTREGA (DIAS)
                                         str(nuevo_cliente).upper(),     # K: CLIENTE
                                         str(nuevo_seguro).upper(),      # L: SEGURO
                                         str(nuevo_ticket),              # M: N° TICKET
@@ -586,9 +589,10 @@ with tab_turnos:
                                     
                                     hoja.append_row(nueva_fila)
                                     
+                                    # Forzamos limpieza de memoria (Truco de la versión)
                                     st.cache_data.clear()
-                                    if 'memoria_turnos_v11' in st.session_state:
-                                        del st.session_state['memoria_turnos_v11']
+                                    if 'memoria_turnos_v12' in st.session_state:
+                                        del st.session_state['memoria_turnos_v12']
                                     
                                     st.success(f"¡Vehículo {nueva_patente.upper()} guardado exitosamente!")
                                     
@@ -597,11 +601,11 @@ with tab_turnos:
                                     st.rerun()
                                 except Exception as e:
                                     st.session_state.procesando_envio = False
-                                    st.error(f"Error al guardar: {e}")
+                                    st.error(f"Error al guardar en Sheets: {e}")
                         else:
-                            st.warning("Por favor completá Patente y Vehículo.")
+                            st.warning("Por favor completá Patente y Vehículo (son obligatorios).")
                     else:
-                        st.error("Error: No hay conexión con Google Sheets. Revisá las credenciales.")
+                        st.error("Aguardá un momento, se está procesando el envío anterior.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     
