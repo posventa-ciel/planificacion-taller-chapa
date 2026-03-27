@@ -345,14 +345,14 @@ def obtener_datos_maestros():
     return pd.DataFrame(filas)
 
 # --- MEMORIA Y CARGA DE DATOS ---
-if 'memoria_turnos_v11' not in st.session_state: 
-    st.session_state.memoria_turnos_v11 = obtener_turnos()
+if 'memoria_turnos_v12' not in st.session_state: 
+    st.session_state.memoria_turnos_v12 = obtener_turnos()
 
 if 'entregas_confirmadas' not in st.session_state:
     st.session_state.entregas_confirmadas = []
 
 df = obtener_datos_maestros()
-df_turnos_display = st.session_state.memoria_turnos_v11.copy()
+df_turnos_display = st.session_state.memoria_turnos_v12.copy()
 df_completo = df.copy() 
 
 hoy = datetime.today()
