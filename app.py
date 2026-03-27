@@ -756,7 +756,7 @@ with tab_turnos:
                         patentes_sheet = hoja.col_values(5) if hoja else []
                         for idx, row in edited_recibidos.iterrows():
                             row_orig = df_recibidos.loc[idx]
-                            if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row_orig['Ticket']) or str(row['Referencia']) != str(row_orig['Referencia'])):
+                            if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row['Ticket']) or str(row['Referencia']) != str(row_orig['Referencia'])):
                                 if hoja and row['Patente'].upper() in patentes_sheet:
                                     fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
                                     try:
@@ -765,8 +765,13 @@ with tab_turnos:
                                         hoja.update_acell(f'M{fila_sheet}', str(row['Ticket']) if pd.notna(row['Ticket']) else "")
                                         hoja.update_acell(f'P{fila_sheet}', str(row['Referencia']) if pd.notna(row['Referencia']) else "")
                                     except: pass
+                        
+                        # --- BORRADO DINÁMICO DE MEMORIA ---
                         st.cache_data.clear()
-                        if 'memoria_turnos_v11' in st.session_state: del st.session_state['memoria_turnos_v11']
+                        claves_a_borrar = [k for k in st.session_state.keys() if k.startswith('memoria_turnos')]
+                        for k in claves_a_borrar:
+                            del st.session_state[k]
+                            
                         st.success("Correcciones aplicadas y guardadas."); time.sleep(1.5); st.rerun()
 
     with st.container(border=True):
