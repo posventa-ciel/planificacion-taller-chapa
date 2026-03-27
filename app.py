@@ -1461,6 +1461,48 @@ with tab_fac:
         else:
             st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
 
+else:
+            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
+
+        # --- NUEVO MÓDULO DE AUDITORÍA (PEGAR ACÁ) ---
+        st.divider()
+        st.markdown("### 🚨 Auditoría de Carga (Detectores de Errores)")
+        st.write("Vehículos que requieren corrección manual en el Google Sheets por datos faltantes o mal cargados.")
+        
+        # 1. Autos en SI o FAC pero que tienen Precio 0 (se olvidaron o pusieron letras)
+        errores_precio = df[(df['Estado_Fac'].isin(['FAC', 'SI'])) & (df['Precio'] == 0)]
+        
+        # 2. Autos activos (no entregados) que no tienen paños cargados
+        errores_panos = df[(~df['Estado_Taller'].str.contains("ENTREGADO", na=False)) & (df['Paños'] == 0)]
+
+        # Juntamos todas las alertas en una listita
+        alertas = []
+        for _, row in errores_precio.iterrows():
+            alertas.append({"Dominio": row['Patente'], "Error": "💰 Falta Precio (o tiene letras)", "Grupo": row['Grupo'], "Asesor": row['Asesor']})
+        
+        for _, row in errores_panos.iterrows():
+            alertas.append({"Dominio": row['Patente'], "Error": "📦 Faltan Paños (o tiene letras)", "Grupo": row['Grupo'], "Asesor": row['Asesor']})
+            
+        if alertas:
+            df_alertas = pd.DataFrame(alertas)
+            st.error(f"⚠️ Se detectaron {len(df_alertas)} errores de carga en la planilla.")
+            
+            # Mostramos la tabla para que el jefe de taller sepa a quién retar
+            st.dataframe(
+                df_alertas, 
+                hide_index=True, 
+                use_container_width=True,
+                column_config={
+                    "Dominio": st.column_config.TextColumn("Patente", width="small"),
+                    "Error": st.column_config.TextColumn("Tipo de Error", width="large"),
+                    "Grupo": st.column_config.TextColumn("Sector"),
+                    "Asesor": st.column_config.TextColumn("Responsable")
+                }
+            )
+        else:
+            st.success("✅ ¡Planilla impecable! No se detectaron errores de carga de datos de paños o precios.")
+        # --- FIN DEL MÓDULO DE AUDITORÍA ---
+
 # ==========================================
 # PESTAÑA 5: KPIs
 # ==========================================
