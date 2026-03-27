@@ -705,9 +705,11 @@ with tab_turnos:
                                         hoja.update_acell(f'P{fila_sheet}', str(row['Referencia']) if pd.notna(row['Referencia']) else "")
                                         
                                         if row['Cancelado']:
-                                            hoja.update_acell(f'A{fila_sheet}', "CANCELADO")
+                                            # Acá le decimos que ponga la letra C
+                                            hoja.update_acell(f'A{fila_sheet}', "C")
                                             hoja.update_acell(f'Q{fila_sheet}', str(row['Motivo_Cancelacion']) if pd.notna(row['Motivo_Cancelacion']) else "")
                                         elif row_orig['Cancelado'] and not row['Cancelado']:
+                                            # Si lo descancela, vuelve a poner N o SI
                                             hoja.update_acell(f'A{fila_sheet}', "N" if row_orig['Tipo'] == '🚶‍♂️ SIN TURNO' else "SI") 
                                             hoja.update_acell(f'Q{fila_sheet}', "")
                                     except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
