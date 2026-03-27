@@ -184,8 +184,8 @@ def obtener_turnos():
             
             val_turno_str = str(row.get(col_turno, '')).strip().upper()
             
-            # Lógica de estados en columna A
-            es_cancelado = val_turno_str == "CANCELADO"
+            # Lógica de estados en columna A (Reconoce 'C' o 'CANCELADO')
+            es_cancelado = val_turno_str in ["CANCELADO", "C"]
             if val_turno_str == "N" or val_turno_str == "NO":
                 tipo_turno = '🚶‍♂️ SIN TURNO'
             else:
