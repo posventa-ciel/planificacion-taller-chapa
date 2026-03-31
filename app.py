@@ -1184,11 +1184,9 @@ with tab_fac:
         df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
         df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
 
-        df_alertas_si = df_analisis[df_analisis['Estado_Resumen'] == 'Aprobado (SI)']
-
-        df_tpf = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
-        df_tpe = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
-        df_epf = df_alertas_si[df_alertas_si['Estado_Taller'].str.contains("ENTREGADO", na=False)]
+        df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
+        df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
+        df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
 
         st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
         c_e1, c_e2, c_e3 = st.columns(3)
