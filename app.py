@@ -756,27 +756,49 @@ with tab_turnos:
                 
                 if st.button("💾 Guardar Correcciones (Completados)"):
                     with st.spinner("Actualizando planilla en la nube..."):
-                        patentes_sheet = hoja.col_values(5) if hoja else []
+                        
+                        # ASPIRADORA DE ESPACIOS: Limpiamos todas las patentes del Excel
+                        patentes_sheet_raw = hoja.col_values(5) if hoja else []
+                        patentes_sheet = [str(p).strip().upper() for p in patentes_sheet_raw]
+                        
+                        cambios_detectados = False
+                        
                         for idx, row in edited_recibidos.iterrows():
                             row_orig = df_recibidos.loc[idx]
-                            if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row['Ticket']) or str(row['Referencia']) != str(row_orig['Referencia'])):
-                                if hoja and row['Patente'].upper() in patentes_sheet:
-                                    # --- BÚSQUEDA INVERTIDA ---
-                                    fila_sheet = len(patentes_sheet) - patentes_sheet[::-1].index(row['Patente'].upper())
+                            
+                            # CORRECCIÓN DEL BUG: Ahora compara el Ticket nuevo vs el original
+                            if (row['Recibido'] != row_orig['Recibido'] or 
+                                row['Fotos'] != row_orig['Fotos'] or 
+                                str(row['Ticket']).strip() != str(row_orig['Ticket']).strip() or 
+                                str(row['Referencia']).strip() != str(row_orig['Referencia']).strip()):
+                                
+                                # Limpiamos también la patente que viene de la pantalla
+                                patente_buscada = str(row['Patente']).strip().upper()
+                                cambios_detectados = True
+                                
+                                if hoja and patente_buscada in patentes_sheet:
+                                    # --- BÚSQUEDA INVERTIDA PERFECTA ---
+                                    fila_sheet = len(patentes_sheet) - patentes_sheet[::-1].index(patente_buscada)
                                     try:
                                         hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "")
                                         hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
                                         hoja.update_acell(f'M{fila_sheet}', str(row['Ticket']) if pd.notna(row['Ticket']) else "")
                                         hoja.update_acell(f'P{fila_sheet}', str(row['Referencia']) if pd.notna(row['Referencia']) else "")
-                                    except: pass
+                                    except Exception as e:
+                                        st.error(f"Error guardando la patente {patente_buscada}: {e}")
+                                else:
+                                    st.warning(f"Atención: La patente {patente_buscada} no se encontró en el Google Sheets.")
                         
-                        # --- BORRADO DINÁMICO DE MEMORIA ---
-                        st.cache_data.clear()
-                        claves_a_borrar = [k for k in st.session_state.keys() if k.startswith('memoria_turnos')]
-                        for k in claves_a_borrar:
-                            del st.session_state[k]
-                            
-                        st.success("Correcciones aplicadas y guardadas."); time.sleep(1.5); st.rerun()
+                        if cambios_detectados:
+                            # --- BORRADO DINÁMICO DE MEMORIA ---
+                            st.cache_data.clear()
+                            claves_a_borrar = [k for k in st.session_state.keys() if k.startswith('memoria_turnos')]
+                            for k in claves_a_borrar:
+                                del st.session_state[k]
+                                
+                            st.success("¡Correcciones aplicadas y guardadas!"); time.sleep(1.5); st.rerun()
+                        else:
+                            st.info("No detecté cambios nuevos para guardar.")
 
     with st.container(border=True):
         st.markdown("<h2 style='color: #1e7e34; margin-top: 0;'>📤 2. SALIDAS: Agenda de Entregas</h2>", unsafe_allow_html=True)
