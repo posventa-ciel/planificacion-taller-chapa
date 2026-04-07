@@ -694,7 +694,8 @@ with tab_turnos:
                                 str(row.get('Observaciones','')) != str(row_orig.get('Observaciones',''))):
                                 
                                 if hoja and row['Patente'].upper() in patentes_sheet:
-                                    fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
+                                    # --- BÚSQUEDA INVERTIDA (De abajo hacia arriba) ---
+                                    fila_sheet = len(patentes_sheet) - patentes_sheet[::-1].index(row['Patente'].upper())
                                     try:
                                         hoja.update_acell(f'B{fila_sheet}', row['Fecha'].strftime('%d/%m/%Y'))
                                         hoja.update_acell(f'F{fila_sheet}', row['Asesor'])
@@ -723,7 +724,9 @@ with tab_turnos:
                                 if row.get('Eliminar', False): 
                                     indices_a_borrar.append(idx)
                                     if hoja and row['Patente'].upper() in patentes_sheet:
-                                        filas_a_borrar_sheet.append(patentes_sheet.index(row['Patente'].upper()) + 1)
+                                        # --- BÚSQUEDA INVERTIDA PARA BORRAR ---
+                                        fila_invertida = len(patentes_sheet) - patentes_sheet[::-1].index(row['Patente'].upper())
+                                        filas_a_borrar_sheet.append(fila_invertida)
                                 else:
                                     procesar_guardado_fila(row, df_sin.loc[idx])
                         
@@ -758,7 +761,8 @@ with tab_turnos:
                             row_orig = df_recibidos.loc[idx]
                             if (row['Recibido'] != row_orig['Recibido'] or row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row['Ticket']) or str(row['Referencia']) != str(row_orig['Referencia'])):
                                 if hoja and row['Patente'].upper() in patentes_sheet:
-                                    fila_sheet = patentes_sheet.index(row['Patente'].upper()) + 1
+                                    # --- BÚSQUEDA INVERTIDA ---
+                                    fila_sheet = len(patentes_sheet) - patentes_sheet[::-1].index(row['Patente'].upper())
                                     try:
                                         hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "")
                                         hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
