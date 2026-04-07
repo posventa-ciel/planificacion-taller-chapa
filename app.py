@@ -654,7 +654,7 @@ with tab_turnos:
                 df_sin = df_pendientes[df_pendientes['Tipo'] == '🚶‍♂️ SIN TURNO']
                 edited_prog, edited_sin = pd.DataFrame(), pd.DataFrame()
                 
-                # CONFIGURACIÓN DEL EDITOR (Agregamos Observaciones con el nuevo orden)
+                # CONFIGURACIÓN DEL EDITOR
                 conf_columnas = {
                     "Fecha": st.column_config.DateColumn("📅 Fecha", format="DD/MM/YYYY"), 
                     "Asesor": st.column_config.SelectboxColumn("Asesor", options=ASESORES_LISTA), 
@@ -679,23 +679,24 @@ with tab_turnos:
                     edited_sin = st.data_editor(df_sin[orden_columnas_sin], column_config=conf_columnas, hide_index=True, use_container_width=True, key="editor_sin")
 
             if st.button("💾 Guardar Cambios e Ingresos"):
-                    with st.spinner("Conectando con Google Sheets y sincronizando..."):
-                        patentes_sheet = hoja.col_values(5) if hoja else []
-                        indices_a_borrar = []
-                        filas_a_borrar_sheet = [] 
+                    with st.spinner("Sincronizando con la base de datos..."):
+                        # SUPER LIMPIEZA: Cargamos patentes del Sheet borrando TODO espacio y pasando a Mayúsculas
+                        patentes_sheet_raw = hoja.col_values(5) if hoja else []
+                        patentes_limpias = ["".join(str(p).split()).upper() for p in patentes_sheet_raw]
                         
-                        # Función auxiliar para no repetir código al guardar
                         def procesar_guardado_fila(row, row_orig):
                             if (row['Fecha'] != row_orig['Fecha'] or row['Recibido'] != row_orig['Recibido'] or 
-                                row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']) != str(row_orig['Ticket']) or 
-                                str(row['Referencia']) != str(row_orig['Referencia']) or row['Asesor'] != row_orig['Asesor'] or 
+                                row['Fotos'] != row_orig['Fotos'] or str(row['Ticket']).strip() != str(row_orig['Ticket']).strip() or 
+                                str(row['Referencia']).strip() != str(row_orig['Referencia']).strip() or row['Asesor'] != row_orig['Asesor'] or 
                                 row['Cancelado'] != row_orig['Cancelado'] or 
                                 str(row.get('Motivo_Cancelacion','')) != str(row_orig.get('Motivo_Cancelacion','')) or
                                 str(row.get('Observaciones','')) != str(row_orig.get('Observaciones',''))):
                                 
-                                if hoja and row['Patente'].upper() in patentes_sheet:
+                                patente_buscada = "".join(str(row['Patente']).split()).upper()
+                                
+                                if hoja and patente_buscada in patentes_limpias:
                                     # --- BÚSQUEDA INVERTIDA (De abajo hacia arriba) ---
-                                    fila_sheet = len(patentes_sheet) - patentes_sheet[::-1].index(row['Patente'].upper())
+                                    fila_sheet = len(patentes_limpias) - patentes_limpias[::-1].index(patente_buscada)
                                     try:
                                         hoja.update_acell(f'B{fila_sheet}', row['Fecha'].strftime('%d/%m/%Y'))
                                         hoja.update_acell(f'F{fila_sheet}', row['Asesor'])
@@ -706,11 +707,9 @@ with tab_turnos:
                                         hoja.update_acell(f'P{fila_sheet}', str(row['Referencia']) if pd.notna(row['Referencia']) else "")
                                         
                                         if row['Cancelado']:
-                                            # Acá le decimos que ponga la letra C
                                             hoja.update_acell(f'A{fila_sheet}', "C")
                                             hoja.update_acell(f'Q{fila_sheet}', str(row['Motivo_Cancelacion']) if pd.notna(row['Motivo_Cancelacion']) else "")
                                         elif row_orig['Cancelado'] and not row['Cancelado']:
-                                            # Si lo descancela, vuelve a poner N o SI
                                             hoja.update_acell(f'A{fila_sheet}', "N" if row_orig['Tipo'] == '🚶‍♂️ SIN TURNO' else "SI") 
                                             hoja.update_acell(f'Q{fila_sheet}', "")
                                     except Exception as e: st.error(f"Error guardando {row['Patente']}: {e}")
@@ -722,26 +721,19 @@ with tab_turnos:
                         if not edited_sin.empty:
                             for idx, row in edited_sin.iterrows():
                                 if row.get('Eliminar', False): 
-                                    indices_a_borrar.append(idx)
-                                    if hoja and row['Patente'].upper() in patentes_sheet:
-                                        # --- BÚSQUEDA INVERTIDA PARA BORRAR ---
-                                        fila_invertida = len(patentes_sheet) - patentes_sheet[::-1].index(row['Patente'].upper())
-                                        filas_a_borrar_sheet.append(fila_invertida)
+                                    patente_buscada = "".join(str(row['Patente']).split()).upper()
+                                    if hoja and patente_buscada in patentes_limpias:
+                                        fila_invertida = len(patentes_limpias) - patentes_limpias[::-1].index(patente_buscada)
+                                        try: hoja.delete_rows(fila_invertida)
+                                        except: pass
                                 else:
                                     procesar_guardado_fila(row, df_sin.loc[idx])
-                        
-                        if hoja and filas_a_borrar_sheet:
-                            filas_a_borrar_sheet.sort(reverse=True)
-                            for f in filas_a_borrar_sheet:
-                                try: hoja.delete_rows(f)
-                                except: pass
                                             
                         st.cache_data.clear()
-                        # Usamos el truco del nombre de variable para refrescar la memoria
-                        if 'memoria_turnos_v14' in st.session_state:
-                            del st.session_state['memoria_turnos_v14']
+                        claves_a_borrar = [k for k in st.session_state.keys() if k.startswith('memoria_turnos')]
+                        for k in claves_a_borrar: del st.session_state[k]
                             
-                        st.success("¡Cambios y recepciones guardadas correctamente en Google Sheets!"); time.sleep(1.5); st.rerun()
+                        st.success("¡Sincronización completa!"); time.sleep(1.5); st.rerun()
 
             st.write("#### 🏁 Turnos Completados (Ya Recibidos)")
             if not df_recibidos.empty:
@@ -757,28 +749,24 @@ with tab_turnos:
                 if st.button("💾 Guardar Correcciones (Completados)"):
                     with st.spinner("Actualizando planilla en la nube..."):
                         
-                        # ASPIRADORA DE ESPACIOS: Limpiamos todas las patentes del Excel
                         patentes_sheet_raw = hoja.col_values(5) if hoja else []
-                        patentes_sheet = [str(p).strip().upper() for p in patentes_sheet_raw]
+                        patentes_limpias = ["".join(str(p).split()).upper() for p in patentes_sheet_raw]
                         
                         cambios_detectados = False
                         
                         for idx, row in edited_recibidos.iterrows():
                             row_orig = df_recibidos.loc[idx]
                             
-                            # CORRECCIÓN DEL BUG: Ahora compara el Ticket nuevo vs el original
                             if (row['Recibido'] != row_orig['Recibido'] or 
                                 row['Fotos'] != row_orig['Fotos'] or 
                                 str(row['Ticket']).strip() != str(row_orig['Ticket']).strip() or 
                                 str(row['Referencia']).strip() != str(row_orig['Referencia']).strip()):
                                 
-                                # Limpiamos también la patente que viene de la pantalla
-                                patente_buscada = str(row['Patente']).strip().upper()
+                                patente_buscada = "".join(str(row['Patente']).split()).upper()
                                 cambios_detectados = True
                                 
-                                if hoja and patente_buscada in patentes_sheet:
-                                    # --- BÚSQUEDA INVERTIDA PERFECTA ---
-                                    fila_sheet = len(patentes_sheet) - patentes_sheet[::-1].index(patente_buscada)
+                                if hoja and patente_buscada in patentes_limpias:
+                                    fila_sheet = len(patentes_limpias) - patentes_limpias[::-1].index(patente_buscada)
                                     try:
                                         hoja.update_acell(f'N{fila_sheet}', "SI" if row['Recibido'] else "")
                                         hoja.update_acell(f'O{fila_sheet}', "SI" if row['Fotos'] else "")
@@ -790,11 +778,9 @@ with tab_turnos:
                                     st.warning(f"Atención: La patente {patente_buscada} no se encontró en el Google Sheets.")
                         
                         if cambios_detectados:
-                            # --- BORRADO DINÁMICO DE MEMORIA ---
                             st.cache_data.clear()
                             claves_a_borrar = [k for k in st.session_state.keys() if k.startswith('memoria_turnos')]
-                            for k in claves_a_borrar:
-                                del st.session_state[k]
+                            for k in claves_a_borrar: del st.session_state[k]
                                 
                             st.success("¡Correcciones aplicadas y guardadas!"); time.sleep(1.5); st.rerun()
                         else:
