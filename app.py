@@ -889,6 +889,64 @@ with tab_turnos:
                         st.rerun()
                     else:
                         st.warning("No marcaste ningún vehículo como entregado.")
+                    # --- NUEVO BLOQUE: BALANCEO DE CARGA ---
+            st.divider()
+            st.markdown("### ⚖️ Balanceo de Carga Operativa (Cuellos de Botella)")
+            st.write("Visualización de ingresos y entregas para evitar la saturación de principio/fin de semana y los cuellos de botella a fin de mes. El objetivo es aplanar estas curvas.")
+            
+            # Copia de datos aislando las fechas
+            df_balance = df_analisis.copy()
+            df_balance['Fecha_Ingreso_Dt'] = pd.to_datetime(df_balance['Fecha_Ingreso'], errors='coerce')
+            df_balance['Fecha_Promesa_Dt'] = pd.to_datetime(df_balance['Fecha_Promesa_Disp'], errors='coerce')
+            
+            # Filtrar limpieza para el mes actual
+            if mes_filtro != "TODOS":
+                df_balance = df_balance[(df_balance['Fecha_Promesa_Dt'].dt.month == mes_num_filtro) | (df_balance['Fecha_Ingreso_Dt'].dt.month == mes_num_filtro)]
+
+            c_bal1, c_bal2 = st.columns(2)
+            
+            with c_bal1:
+                # 1. Gráfico por Día de la Semana
+                dias_orden = {0: '1-Lun', 1: '2-Mar', 2: '3-Mié', 3: '4-Jue', 4: '5-Vie', 5: '6-Sáb', 6: '7-Dom'}
+                
+                ingresos = df_balance['Fecha_Ingreso_Dt'].dt.dayofweek.map(dias_orden).value_counts().reset_index()
+                ingresos.columns = ['Día', 'Cantidad']
+                ingresos['Movimiento'] = '📥 Recepciones'
+                
+                entregas = df_balance['Fecha_Promesa_Dt'].dt.dayofweek.map(dias_orden).value_counts().reset_index()
+                entregas.columns = ['Día', 'Cantidad']
+                entregas['Movimiento'] = '📤 Entregas'
+                
+                df_semana = pd.concat([ingresos, entregas]).dropna().sort_values('Día')
+                
+                # Dejamos solo las tres letras del día para el gráfico
+                df_semana['Día'] = df_semana['Día'].apply(lambda x: x.split('-')[1] if isinstance(x, str) else x)
+                
+                fig_sem = px.bar(df_semana, x='Día', y='Cantidad', color='Movimiento', barmode='group', 
+                                 title="Saturación por Día de la Semana",
+                                 color_discrete_map={'📥 Recepciones': '#00235d', '📤 Entregas': '#28a745'}, text_auto=True)
+                fig_sem.update_layout(xaxis_title="", yaxis_title="Cant. de Vehículos", legend_title_text="")
+                st.plotly_chart(fig_sem, use_container_width=True)
+
+            with c_bal2:
+                # 2. Gráfico Día a Día del Mes (Picos)
+                entregas_diarias = df_balance.dropna(subset=['Fecha_Promesa_Dt']).groupby('Fecha_Promesa_Dt').size().reset_index(name='Cantidad')
+                
+                if mes_filtro != "TODOS":
+                     entregas_diarias = entregas_diarias[entregas_diarias['Fecha_Promesa_Dt'].dt.month == mes_num_filtro]
+                     
+                fig_dia = px.bar(entregas_diarias, x='Fecha_Promesa_Dt', y='Cantidad', 
+                                 title="Calendario de Entregas (Pico de Fin de Mes)",
+                                 color_discrete_sequence=['#28a745'], text_auto=True)
+                fig_dia.update_layout(xaxis_title="Fecha de Entrega", yaxis_title="Cant. de Vehículos")
+                
+                # Le clavamos una línea roja de promedio para escrachar los días saturados
+                if not entregas_diarias.empty:
+                    promedio_entregas = entregas_diarias['Cantidad'].mean()
+                    fig_dia.add_hline(y=promedio_entregas, line_dash="dash", line_color="#dc3545", annotation_text=f"Promedio Ideal: {promedio_entregas:.1f}/día", annotation_position="top left")
+                    
+                st.plotly_chart(fig_dia, use_container_width=True)
+            # --- FIN BLOQUE BALANCEO ---
 
 # ==========================================
 # PESTAÑA 2: PROGRAMACIÓN Y KANBAN
@@ -1309,65 +1367,6 @@ with tab_fac:
             
             fig.update_layout(title="Curva de Acumulación de Trabajo (Mes)", xaxis_title="Días Hábiles", yaxis_title="Cantidad de Paños Acumulados", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), hovermode="x unified")
             st.plotly_chart(fig, use_container_width=True)
-            
-            # --- NUEVO BLOQUE: BALANCEO DE CARGA ---
-            st.divider()
-            st.markdown("### ⚖️ Balanceo de Carga Operativa (Cuellos de Botella)")
-            st.write("Visualización de ingresos y entregas para evitar la saturación de principio/fin de semana y los cuellos de botella a fin de mes. El objetivo es aplanar estas curvas.")
-            
-            # Copia de datos aislando las fechas
-            df_balance = df_analisis.copy()
-            df_balance['Fecha_Ingreso_Dt'] = pd.to_datetime(df_balance['Fecha_Ingreso'], errors='coerce')
-            df_balance['Fecha_Promesa_Dt'] = pd.to_datetime(df_balance['Fecha_Promesa_Disp'], errors='coerce')
-            
-            # Filtrar limpieza para el mes actual
-            if mes_filtro != "TODOS":
-                df_balance = df_balance[(df_balance['Fecha_Promesa_Dt'].dt.month == mes_num_filtro) | (df_balance['Fecha_Ingreso_Dt'].dt.month == mes_num_filtro)]
-
-            c_bal1, c_bal2 = st.columns(2)
-            
-            with c_bal1:
-                # 1. Gráfico por Día de la Semana
-                dias_orden = {0: '1-Lun', 1: '2-Mar', 2: '3-Mié', 3: '4-Jue', 4: '5-Vie', 5: '6-Sáb', 6: '7-Dom'}
-                
-                ingresos = df_balance['Fecha_Ingreso_Dt'].dt.dayofweek.map(dias_orden).value_counts().reset_index()
-                ingresos.columns = ['Día', 'Cantidad']
-                ingresos['Movimiento'] = '📥 Recepciones'
-                
-                entregas = df_balance['Fecha_Promesa_Dt'].dt.dayofweek.map(dias_orden).value_counts().reset_index()
-                entregas.columns = ['Día', 'Cantidad']
-                entregas['Movimiento'] = '📤 Entregas'
-                
-                df_semana = pd.concat([ingresos, entregas]).dropna().sort_values('Día')
-                
-                # Dejamos solo las tres letras del día para el gráfico
-                df_semana['Día'] = df_semana['Día'].apply(lambda x: x.split('-')[1] if isinstance(x, str) else x)
-                
-                fig_sem = px.bar(df_semana, x='Día', y='Cantidad', color='Movimiento', barmode='group', 
-                                 title="Saturación por Día de la Semana",
-                                 color_discrete_map={'📥 Recepciones': '#00235d', '📤 Entregas': '#28a745'}, text_auto=True)
-                fig_sem.update_layout(xaxis_title="", yaxis_title="Cant. de Vehículos", legend_title_text="")
-                st.plotly_chart(fig_sem, use_container_width=True)
-
-            with c_bal2:
-                # 2. Gráfico Día a Día del Mes (Picos)
-                entregas_diarias = df_balance.dropna(subset=['Fecha_Promesa_Dt']).groupby('Fecha_Promesa_Dt').size().reset_index(name='Cantidad')
-                
-                if mes_filtro != "TODOS":
-                     entregas_diarias = entregas_diarias[entregas_diarias['Fecha_Promesa_Dt'].dt.month == mes_num_filtro]
-                     
-                fig_dia = px.bar(entregas_diarias, x='Fecha_Promesa_Dt', y='Cantidad', 
-                                 title="Calendario de Entregas (Pico de Fin de Mes)",
-                                 color_discrete_sequence=['#28a745'], text_auto=True)
-                fig_dia.update_layout(xaxis_title="Fecha de Entrega", yaxis_title="Cant. de Vehículos")
-                
-                # Le clavamos una línea roja de promedio para escrachar los días saturados
-                if not entregas_diarias.empty:
-                    promedio_entregas = entregas_diarias['Cantidad'].mean()
-                    fig_dia.add_hline(y=promedio_entregas, line_dash="dash", line_color="#dc3545", annotation_text=f"Promedio Ideal: {promedio_entregas:.1f}/día", annotation_position="top left")
-                    
-                st.plotly_chart(fig_dia, use_container_width=True)
-            # --- FIN BLOQUE BALANCEO ---
                 
         else:
             st.info("Para ver la Curva de Proyección de Ingresos, por favor seleccioná un mes específico en la barra lateral.")
