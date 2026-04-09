@@ -889,15 +889,16 @@ with tab_turnos:
                         st.rerun()
                     else:
                         st.warning("No marcaste ningún vehículo como entregado.")
+                        
             # --- NUEVO BLOQUE: BALANCEO DE CARGA ---
             st.divider()
             st.markdown("### ⚖️ Balanceo de Carga Operativa (Cuellos de Botella)")
             st.write("Visualización de ingresos y entregas para evitar la saturación de principio/fin de semana y los cuellos de botella a fin de mes. El objetivo es aplanar estas curvas.")
             
             # Copia de datos aislando las fechas
-            df_balance = df_analisis.copy()
-            df_balance['Fecha_Ingreso_Dt'] = pd.to_datetime(df_balance['Fecha_Ingreso'], errors='coerce')
-            df_balance['Fecha_Promesa_Dt'] = pd.to_datetime(df_balance['Fecha_Promesa_Disp'], errors='coerce')
+                df_balance = df_analisis.copy()
+                df_balance['Fecha_Ingreso_Dt'] = pd.to_datetime(df_balance['Fecha_Ingreso'], errors='coerce')
+                df_balance['Fecha_Promesa_Dt'] = pd.to_datetime(df_balance['Fecha_Promesa_Disp'], errors='coerce')
             
             # Filtrar limpieza para el mes actual
             if mes_filtro != "TODOS":
