@@ -889,7 +889,7 @@ with tab_turnos:
                         st.rerun()
                     else:
                         st.warning("No marcaste ningún vehículo como entregado.")
-                    # --- NUEVO BLOQUE: BALANCEO DE CARGA ---
+            # --- NUEVO BLOQUE: BALANCEO DE CARGA ---
             st.divider()
             st.markdown("### ⚖️ Balanceo de Carga Operativa (Cuellos de Botella)")
             st.write("Visualización de ingresos y entregas para evitar la saturación de principio/fin de semana y los cuellos de botella a fin de mes. El objetivo es aplanar estas curvas.")
