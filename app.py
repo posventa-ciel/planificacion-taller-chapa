@@ -1261,6 +1261,25 @@ with tab_fac:
         df_tpf = df[df['Estado_Taller'].str.contains("TERM PEND FACT", na=False)]
         df_tpe = df[df['Estado_Taller'].str.contains("TERM PEND ENTREG", na=False)]
         df_epf = df[df['Estado_Taller'].str.contains("ENTREGADO PEND FACT", na=False)]
+        
+        # --- GESTIÓN DE TERCEROS ---
+        st.divider()
+        st.markdown("### 🤝 Gestión Financiera de Terceros")
+        df_terceros = df_analisis[(df_analisis['Grupo'] == 'TERCEROS') & (df_analisis['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
+        
+        if not df_terceros.empty:
+            tot_ter_fac = df_terceros['Precio'].sum()
+            tot_ter_costo = df_terceros['Costo'].sum()
+            tot_ter_margen = tot_ter_fac - tot_ter_costo
+            tot_ter_panos = df_terceros['Paños'].sum()
+            
+            c_t1, c_t2, c_t3, c_t4 = st.columns(4)
+            c_t1.markdown(f'<div class="metric-card"><div class="metric-title">Total Venta (Terceros)</div><div class="metric-value-money" style="font-size: 1.5rem;">{formato_pesos(tot_ter_fac)}</div></div>', unsafe_allow_html=True)
+            c_t2.markdown(f'<div class="metric-card"><div class="metric-title">Costo Total</div><div class="metric-value-money" style="color:#dc3545; font-size: 1.5rem;">{formato_pesos(tot_ter_costo)}</div></div>', unsafe_allow_html=True)
+            c_t3.markdown(f'<div class="metric-card"><div class="metric-title">Margen de Ganancia</div><div class="metric-value-money" style="color:#28a745; font-size: 1.5rem;">{formato_pesos(tot_ter_margen)}</div></div>', unsafe_allow_html=True)
+            c_t4.markdown(f'<div class="metric-card"><div class="metric-title">Paños Asignados</div><div class="metric-value-number" style="font-size: 1.5rem;">{tot_ter_panos:.1f}</div></div>', unsafe_allow_html=True)
+        else:
+            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
 
         st.write("### 🚨 Detalle de Estados Pendientes (Plata Inmovilizada)")
         c_e1, c_e2, c_e3 = st.columns(3)
@@ -1507,25 +1526,7 @@ with tab_fac:
                 if not df_cierre.empty:
                     res_empresa_pie = df_cierre.groupby('Cliente')[['Precio']].sum().reset_index()
                     st.plotly_chart(px.pie(res_empresa_pie, values='Precio', names='Cliente', hole=0.4, title="Participación en el Cierre Estimado ($)"), use_container_width=True)
-
-        # --- GESTIÓN DE TERCEROS ---
-        st.divider()
-        st.markdown("### 🤝 Gestión Financiera de Terceros")
-        df_terceros = df_analisis[(df_analisis['Grupo'] == 'TERCEROS') & (df_analisis['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
-        
-        if not df_terceros.empty:
-            tot_ter_fac = df_terceros['Precio'].sum()
-            tot_ter_costo = df_terceros['Costo'].sum()
-            tot_ter_margen = tot_ter_fac - tot_ter_costo
-            tot_ter_panos = df_terceros['Paños'].sum()
-            
-            c_t1, c_t2, c_t3, c_t4 = st.columns(4)
-            c_t1.markdown(f'<div class="metric-card"><div class="metric-title">Total Venta (Terceros)</div><div class="metric-value-money" style="font-size: 1.5rem;">{formato_pesos(tot_ter_fac)}</div></div>', unsafe_allow_html=True)
-            c_t2.markdown(f'<div class="metric-card"><div class="metric-title">Costo Total</div><div class="metric-value-money" style="color:#dc3545; font-size: 1.5rem;">{formato_pesos(tot_ter_costo)}</div></div>', unsafe_allow_html=True)
-            c_t3.markdown(f'<div class="metric-card"><div class="metric-title">Margen de Ganancia</div><div class="metric-value-money" style="color:#28a745; font-size: 1.5rem;">{formato_pesos(tot_ter_margen)}</div></div>', unsafe_allow_html=True)
-            c_t4.markdown(f'<div class="metric-card"><div class="metric-title">Paños Asignados</div><div class="metric-value-number" style="font-size: 1.5rem;">{tot_ter_panos:.1f}</div></div>', unsafe_allow_html=True)
-        else:
-            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
+                    
 
         # --- NUEVO MÓDULO DE AUDITORÍA (PEGAR ACÁ) ---
         st.divider()
