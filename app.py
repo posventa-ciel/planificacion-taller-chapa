@@ -113,7 +113,11 @@ def parsear_fecha_español(texto):
 
     # 2. Buscar formato normal DD/MM o DD-MM (ej: 25/03)
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
-    if match_dm: return datetime(datetime.now().year, int(match_dm.groups()[1]), int(match_dm.groups()[0]))
+    if match_dm: 
+            try:
+                return datetime(datetime.now().year, int(match_dm.groups()[1]), int(match_dm.groups()[0]))
+            except ValueError:
+                return None
     
     # 3. Intentar lectura automática
     try:
