@@ -1274,6 +1274,17 @@ with tab_fac:
         st.divider()
         st.markdown("<h3 style='margin-top: -15px;'>🤝 Gestión Financiera de Terceros</h3>", unsafe_allow_html=True)
         
+        # 🚨 BLINDAJE DE MES PARA TERCEROS 🚨
+        # Evitamos que arrastre Terceros facturados o aprobados de meses anteriores
+        if mes_filtro != "TODOS":
+            fechas_terceros = pd.to_datetime(df_terceros['Fecha_Promesa_Disp'], errors='coerce')
+            es_este_mes = (fechas_terceros.dt.month == mes_num_filtro) & (fechas_terceros.dt.year == año_filtro)
+            
+            # Nos quedamos con: 
+            # 1. Los que tienen fecha de este mes.
+            # 2. O los que todavía no están ni FAC ni SI (siguen en el taller pendientes).
+            df_terceros = df_terceros[es_este_mes | (~df_terceros['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
+
         df_ter_fac = df_terceros[df_terceros['Estado_Resumen'] == 'Facturado (FAC)']
         df_ter_si = df_terceros[df_terceros['Estado_Resumen'] == 'Aprobado (SI)']
         
