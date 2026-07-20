@@ -117,7 +117,7 @@ def parsear_fecha_español(texto):
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
     if match_dm: 
             try:
-                return datetime(datetime.now().year, int(match_dm.groups()[1]), int(match_dm.groups()[0]))
+                return datetime.datetime(datetime.datetime.now().year, int(match_dm.groups()[1]), int(match_dm.groups()[0]))
             except ValueError:
                 return None
     
