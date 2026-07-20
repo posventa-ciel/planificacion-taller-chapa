@@ -8,8 +8,6 @@ import re
 import time
 import json
 import gspread
-import numpy as np
-import datetime
 
 # --- CONEXIÓN A GOOGLE SHEETS (GSPREAD) ---
 try:
@@ -56,14 +54,14 @@ DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", 
 ASESORES_LISTA = ["SIN ASIGNAR", "CESAR OLIVA", "JAVIER GUTIERREZ", "ANDREA MARTINS"]
 CLIENTES_LISTA = ["CENOA", "CENOA SEGURO", "CIEL", "CIEL SEGURO", "CIEL OKM", "CIEL USADO", "AUTOSOL", "AUTOSOL SEGURO", "AUTOSOL OKM", "AUTOSOL USADO", "AUTOLUX", "AUTOLUX SEGURO", "AUTOLUX OKM", "AUTOLUX USADO", "PARTICULAR"]
 
-OBJETIVO_MENSUAL_PANOS = 500.0
+OBJETIVO_MENSUAL_PANOS = 505.0
 
 # --- HELPERS DE FORMATO ---
 formato_pesos = lambda x: f"$ {x:,.0f}".replace(',', '.')
 formato_panos = lambda x: f"{x:.1f}"
 
 # --- LÓGICA DE DÍAS HÁBILES ---
-anio_actual = datetime.datetime.now().year
+anio_actual = datetime.now().year
 FERIADOS_ARG = [
     date(anio_actual, 3, 24), # Día de la Memoria
     date(anio_actual, 4, 2),  # Día de Malvinas / Jueves Santo
@@ -111,15 +109,11 @@ def parsear_fecha_español(texto):
         mes_str = match_abrev.groups()[1]
         mes_num = meses_abrev.get(mes_str)
         if mes_num:
-            return datetime.datetime(datetime.datetime.now().year, mes_num, dia)
+            return datetime(datetime.now().year, mes_num, dia)
 
     # 2. Buscar formato normal DD/MM o DD-MM (ej: 25/03)
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
-    if match_dm: 
-            try:
-                return datetime.datetime(datetime.datetime.now().year, int(match_dm.groups()[1]), int(match_dm.groups()[0]))
-            except ValueError:
-                return None
+    if match_dm: return datetime(datetime.now().year, int(match_dm.groups()[1]), int(match_dm.groups()[0]))
     
     # 3. Intentar lectura automática
     try:
@@ -141,7 +135,7 @@ def clasificar_abc(panos):
     else: return 'C (8+ paños)'
 
 def obtener_proxima_fecha_libre(dias_carga):
-    fecha = datetime.datetime.today()
+    fecha = datetime.today()
     dias_agregados = 0
     while dias_agregados < int(dias_carga):
         fecha += timedelta(days=1)
@@ -311,7 +305,7 @@ def obtener_datos_maestros():
     for _, row in df_raw.iterrows():
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         f_fin_disp = f_fin.date() if f_fin else None
-        if not f_fin: f_fin = datetime.datetime.now() + timedelta(days=3650) 
+        if not f_fin: f_fin = datetime.now() + timedelta(days=3650) 
         
         mes_hist = f_fin.strftime('%Y-%m') if f_fin.year < 2030 else "SIN FECHA"
         if row.get('GRUPO_ORIGEN') in ['PARABRISAS', 'TERCEROS']:
@@ -380,7 +374,7 @@ df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v12.copy()
 df_completo = df.copy() 
 
-hoy = datetime.datetime.today()
+hoy = datetime.today()
 hoy_ym = hoy.strftime('%Y-%m')
 
 # --- BARRA LATERAL (SIDEBAR) Y BUSCADOR ---
@@ -430,40 +424,18 @@ with st.sidebar:
         st.success("¡Datos actualizados y memoria limpia!"); time.sleep(0.5); st.rerun()
     st.caption("Datos extraídos de Google Sheets.")
 
-# Feriados de Argentina 2026 (puedes agregar más separados por coma)
-FERIADOS = ['2026-07-09']
-
-# Aseguramos tener la fecha de hoy definida
-hoy = datetime.date.today()
-
 # --- APLICAR FILTRO MENSUSAL GLOBAL A MAESTRO ---
 if mes_filtro != "TODOS":
     df = df[(df['Mes_Hist'] == mes_filtro) | (df['Mes_Hist'] == 'SIN FECHA')]
     año_filtro, mes_num_filtro = map(int, mes_filtro.split('-'))
+    DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
 else:
     año_filtro, mes_num_filtro = hoy.year, hoy.month
+    DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
 
-# 1. Calcular días hábiles totales del mes (con feriados)
-primer_dia_mes = datetime.date(año_filtro, mes_num_filtro, 1)
-ultimo_dia_mes = datetime.date(año_filtro, mes_num_filtro, calendar.monthrange(año_filtro, mes_num_filtro)[1])
-
-# Usamos str() para que numpy lea las fechas como texto y no tire error de tipo
-DIAS_HABILES_MES = int(np.busday_count(str(primer_dia_mes), str(ultimo_dia_mes + datetime.timedelta(days=1)), holidays=FERIADOS))
-
-# 2. Calcular días restantes dependiendo de si miramos el mes actual o uno pasado
-if año_filtro == hoy.year and mes_num_filtro == hoy.month:
-    # Calculamos días transcurridos hasta ayer
-    dias_transcurridos_calc = int(np.busday_count(str(primer_dia_mes), str(hoy), holidays=FERIADOS))
-    dias_restantes_calc = max(0, DIAS_HABILES_MES - dias_transcurridos_calc)
-elif datetime.date(año_filtro, mes_num_filtro, 1) < hoy.replace(day=1):
-    # Si estamos filtrando un mes que ya pasó, los días restantes son cero
-    dias_restantes_calc = 0
-else:
-    # Si por alguna razón filtramos un mes futuro
-    dias_restantes_calc = DIAS_HABILES_MES
-
-CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES if DIAS_HABILES_MES > 0 else 0
+CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES
 CAPACIDAD_DIARIA_GRUPO = CAPACIDAD_DIARIA_TALLER / 2
+dias_restantes_calc = dias_habiles_restantes_mes(año_filtro, mes_num_filtro)
 
 # --- APLICAR BUSCADOR GLOBAL ---
 if busqueda_global:
@@ -550,11 +522,11 @@ with tab_turnos:
             ultimo_dia = date(año_filtro, mes_num_filtro, ult_dia_int)
             
             if mes_seleccionado_label == "🗓️ MES ACTUAL":
-                rango_default = (hoy, hoy) 
+                rango_default = (hoy.date(), hoy.date()) 
             else:
                 rango_default = (primer_dia, ultimo_dia) 
         else:
-            rango_default = (hoy, hoy)
+            rango_default = (hoy.date(), hoy.date())
             
         fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=rango_default, format="DD/MM/YYYY")
         if isinstance(fechas_seleccionadas, tuple):
@@ -1270,42 +1242,27 @@ with tab_fac:
         panos_est_prop = panos_fac_prop + panos_si_prop
         
         # --- CÁLCULOS DE OBJETIVOS (SOLO CON PAÑOS PROPIOS) ---
-        dias_restantes = dias_restantes_calc
-        # Calculamos cuántos días ya pasaron del mes actual
-        dias_transcurridos = max(0, DIAS_HABILES_MES - dias_restantes)
-        
-        # Objetivo global del mes
         porcentaje_logro = min((panos_est_prop / OBJETIVO_MENSUAL_PANOS) * 100 if OBJETIVO_MENSUAL_PANOS > 0 else 0, 100)
+        
+        dias_restantes = dias_restantes_calc
         panos_faltantes = max(0, OBJETIVO_MENSUAL_PANOS - panos_est_prop)
         ritmo_diario_necesario = panos_faltantes / dias_restantes if dias_restantes > 0 else 0
-        
-        # 🎯 NUEVO: Objetivo prorrateado a la fecha
-        objetivo_a_la_fecha = (OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES) * dias_transcurridos if DIAS_HABILES_MES > 0 else 0
-        cumplimiento_fecha_pct = (panos_est_prop / objetivo_a_la_fecha) * 100 if objetivo_a_la_fecha > 0 else 0
         
         st.markdown("### 🎯 Control de Objetivo Mensual")
         c_obj1, c_obj2 = st.columns([3, 1])
         with c_obj1:
             st.progress(int(porcentaje_logro))
-            st.caption(f"**Progreso del Mes:** {panos_est_prop:.1f} paños propios de un objetivo total de {OBJETIVO_MENSUAL_PANOS} paños.")
+            st.caption(f"**Progreso del Mes:** {panos_est_prop:.1f} paños propios de un objetivo de {OBJETIVO_MENSUAL_PANOS} paños.")
         with c_obj2:
             st.markdown(f"<h3 style='text-align: right; color: {'#28a745' if porcentaje_logro >= 95 else '#ffc107' if porcentaje_logro >= 75 else '#dc3545'}; margin-top: 0;'>{porcentaje_logro:.1f}%</h3>", unsafe_allow_html=True)
             
-        # Semáforo para el cumplimiento a la fecha
-        if cumplimiento_fecha_pct >= 100:
-            color_cumplimiento = "🟢"
-        elif cumplimiento_fecha_pct >= 85:
-            color_cumplimiento = "🟡"
-        else:
-            color_cumplimiento = "🔴"
-
-        # Tarjeta visual con el cumplimiento prorrateado
-        st.success(f"{color_cumplimiento} **Cumplimiento a la fecha:** Van **{dias_transcurridos}** de **{DIAS_HABILES_MES}** días hábiles. "
-                   f"El objetivo esperado a hoy es de **{objetivo_a_la_fecha:.1f} paños**.\n\n"
-                   f"👉 Llevamos **{panos_est_prop:.1f}** paños, lo que representa un **{cumplimiento_fecha_pct:.1f}%** de cumplimiento a la fecha.")
+        st.info(f"⏱️ **Termómetro de Ritmo:** Faltan **{panos_faltantes:.1f} paños propios** y quedan **{dias_restantes} días hábiles**. Para llegar a la meta, el taller interno debe sacar **{ritmo_diario_necesario:.1f} paños por día**.")
             
-        st.info(f"⏱️ **Termómetro de Ritmo:** Faltan **{panos_faltantes:.1f} paños propios** y quedan **{dias_restantes} días hábiles**. "
-                f"Para llegar a la meta a fin de mes, el taller debe sacar **{ritmo_diario_necesario:.1f} paños por día**.")
+        st.write("### 💰 Rendimiento y Proyección al Cierre (Producción Interna)")
+        c_r1, c_r2, c_r3 = st.columns(3)
+        c_r1.markdown(f'<div class="metric-card" style="border-left: 5px solid #28a745;"><div class="metric-title" style="color: #28a745;">Facturado Actual (FAC)</div><div class="metric-value-money" style="color: #28a745;">{formato_pesos(pesos_fac)}</div><div class="metric-subtitle-gray" style="font-size: 1.1rem; margin-top: 8px;">📦 {panos_fac_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
+        c_r2.markdown(f'<div class="metric-card" style="border-left: 5px solid #17a2b8;"><div class="metric-title" style="color: #17a2b8;">Aprobado (SI)</div><div class="metric-value-money" style="color:#17a2b8;">{formato_pesos(pesos_si)}</div><div class="metric-subtitle-green" style="font-size: 1.1rem; color: #17a2b8; margin-top: 8px;">📦 {panos_si_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
+        c_r3.markdown(f'<div class="metric-card" style="border-left: 5px solid #00235d;"><div class="metric-title" style="color:#00235d;">Estimado a Cierre de Mes</div><div class="metric-value-money" style="color:#00235d;">{formato_pesos(pesos_est)}</div><div class="metric-subtitle-gray" style="font-size: 1.1rem; color:#00235d; font-weight: bold; margin-top: 8px;">📦 {panos_est_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
 
         # ==========================================
         # --- GESTIÓN DE TERCEROS Y GRAN TOTAL ---
@@ -1313,17 +1270,6 @@ with tab_fac:
         st.divider()
         st.markdown("<h3 style='margin-top: -15px;'>🤝 Gestión Financiera de Terceros</h3>", unsafe_allow_html=True)
         
-        # 🚨 BLINDAJE DE MES PARA TERCEROS 🚨
-        # Evitamos que arrastre Terceros facturados o aprobados de meses anteriores
-        if mes_filtro != "TODOS":
-            fechas_terceros = pd.to_datetime(df_terceros['Fecha_Promesa_Disp'], errors='coerce')
-            es_este_mes = (fechas_terceros.dt.month == mes_num_filtro) & (fechas_terceros.dt.year == año_filtro)
-            
-            # Nos quedamos con: 
-            # 1. Los que tienen fecha de este mes.
-            # 2. O los que todavía no están ni FAC ni SI (siguen en el taller pendientes).
-            df_terceros = df_terceros[es_este_mes | (~df_terceros['Estado_Resumen'].isin(['Facturado (FAC)', 'Aprobado (SI)']))]
-
         df_ter_fac = df_terceros[df_terceros['Estado_Resumen'] == 'Facturado (FAC)']
         df_ter_si = df_terceros[df_terceros['Estado_Resumen'] == 'Aprobado (SI)']
         
