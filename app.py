@@ -111,7 +111,7 @@ def parsear_fecha_español(texto):
         mes_str = match_abrev.groups()[1]
         mes_num = meses_abrev.get(mes_str)
         if mes_num:
-            return datetime.datetime(datetime.now().year, mes_num, dia)
+            return datetime.datetime(datetime.datetime.now().year, mes_num, dia)
 
     # 2. Buscar formato normal DD/MM o DD-MM (ej: 25/03)
     match_dm = re.match(r'^(\d{1,2})[-/](\d{1,2})$', texto)
