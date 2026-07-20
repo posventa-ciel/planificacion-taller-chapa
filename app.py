@@ -8,6 +8,8 @@ import re
 import time
 import json
 import gspread
+import numpy as np
+import datetime
 
 # --- CONEXIÓN A GOOGLE SHEETS (GSPREAD) ---
 try:
@@ -427,10 +429,6 @@ with st.sidebar:
             del st.session_state['memoria_turnos_v11']
         st.success("¡Datos actualizados y memoria limpia!"); time.sleep(0.5); st.rerun()
     st.caption("Datos extraídos de Google Sheets.")
-
-import numpy as np
-import datetime
-import calendar
 
 # Feriados de Argentina 2026 (puedes agregar más separados por coma)
 FERIADOS = ['2026-07-09']
