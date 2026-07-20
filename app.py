@@ -1301,6 +1301,13 @@ with tab_fac:
         </div>
         """, unsafe_allow_html=True)
 
+        # --- TARJETAS DE RENDIMIENTO Y PROYECCIÓN AL CIERRE (PRODUCCIÓN INTERNA) ---
+        st.markdown("### 💰 Rendimiento y Proyección al Cierre (Producción Interna)")
+        c_r1, c_r2, c_r3 = st.columns(3)
+        c_r1.markdown(f'<div class="metric-card" style="border-left: 5px solid #28a745;"><div class="metric-title" style="color: #28a745;">Facturado Actual (FAC)</div><div class="metric-value-money" style="color: #28a745;">{formato_pesos(pesos_fac)}</div><div style="font-size: 0.85em; color: gray;">M.O.: {formato_pesos(pesos_fac)} | Rep: $ 0</div><div class="metric-subtitle-gray" style="font-size: 1.1rem; margin-top: 8px;">📦 {panos_fac_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
+        c_r2.markdown(f'<div class="metric-card" style="border-left: 5px solid #17a2b8;"><div class="metric-title" style="color: #17a2b8;">Aprobado (SI)</div><div class="metric-value-money" style="color:#17a2b8;">{formato_pesos(pesos_si)}</div><div style="font-size: 0.85em; color: gray;">M.O.: {formato_pesos(pesos_si)} | Rep: $ 0</div><div class="metric-subtitle-green" style="font-size: 1.1rem; color: #17a2b8; margin-top: 8px;">📦 {panos_si_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
+        c_r3.markdown(f'<div class="metric-card" style="border-left: 5px solid #00235d;"><div class="metric-title" style="color:#00235d;">Estimado a Cierre de Mes</div><div class="metric-value-money" style="color:#00235d;">{formato_pesos(pesos_est)}</div><div style="font-size: 0.85em; color: gray;">M.O.: {formato_pesos(pesos_fac + pesos_si)} | Rep: $ 0</div><div class="metric-subtitle-gray" style="font-size: 1.1rem; color:#00235d; font-weight: bold; margin-top: 8px;">📦 {panos_est_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
+
         # ==========================================
         # --- GESTIÓN DE TERCEROS Y GRAN TOTAL ---
         # ==========================================
