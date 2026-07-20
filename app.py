@@ -1246,27 +1246,42 @@ with tab_fac:
         panos_est_prop = panos_fac_prop + panos_si_prop
         
         # --- CÁLCULOS DE OBJETIVOS (SOLO CON PAÑOS PROPIOS) ---
-        porcentaje_logro = min((panos_est_prop / OBJETIVO_MENSUAL_PANOS) * 100 if OBJETIVO_MENSUAL_PANOS > 0 else 0, 100)
-        
         dias_restantes = dias_restantes_calc
+        # Calculamos cuántos días ya pasaron del mes actual
+        dias_transcurridos = max(0, DIAS_HABILES_MES - dias_restantes)
+        
+        # Objetivo global del mes
+        porcentaje_logro = min((panos_est_prop / OBJETIVO_MENSUAL_PANOS) * 100 if OBJETIVO_MENSUAL_PANOS > 0 else 0, 100)
         panos_faltantes = max(0, OBJETIVO_MENSUAL_PANOS - panos_est_prop)
         ritmo_diario_necesario = panos_faltantes / dias_restantes if dias_restantes > 0 else 0
+        
+        # 🎯 NUEVO: Objetivo prorrateado a la fecha
+        objetivo_a_la_fecha = (OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES) * dias_transcurridos if DIAS_HABILES_MES > 0 else 0
+        cumplimiento_fecha_pct = (panos_est_prop / objetivo_a_la_fecha) * 100 if objetivo_a_la_fecha > 0 else 0
         
         st.markdown("### 🎯 Control de Objetivo Mensual")
         c_obj1, c_obj2 = st.columns([3, 1])
         with c_obj1:
             st.progress(int(porcentaje_logro))
-            st.caption(f"**Progreso del Mes:** {panos_est_prop:.1f} paños propios de un objetivo de {OBJETIVO_MENSUAL_PANOS} paños.")
+            st.caption(f"**Progreso del Mes:** {panos_est_prop:.1f} paños propios de un objetivo total de {OBJETIVO_MENSUAL_PANOS} paños.")
         with c_obj2:
             st.markdown(f"<h3 style='text-align: right; color: {'#28a745' if porcentaje_logro >= 95 else '#ffc107' if porcentaje_logro >= 75 else '#dc3545'}; margin-top: 0;'>{porcentaje_logro:.1f}%</h3>", unsafe_allow_html=True)
             
-        st.info(f"⏱️ **Termómetro de Ritmo:** Faltan **{panos_faltantes:.1f} paños propios** y quedan **{dias_restantes} días hábiles**. Para llegar a la meta, el taller interno debe sacar **{ritmo_diario_necesario:.1f} paños por día**.")
+        # Semáforo para el cumplimiento a la fecha
+        if cumplimiento_fecha_pct >= 100:
+            color_cumplimiento = "🟢"
+        elif cumplimiento_fecha_pct >= 85:
+            color_cumplimiento = "🟡"
+        else:
+            color_cumplimiento = "🔴"
+
+        # Tarjeta visual con el cumplimiento prorrateado
+        st.success(f"{color_cumplimiento} **Cumplimiento a la fecha:** Van **{dias_transcurridos}** de **{DIAS_HABILES_MES}** días hábiles. "
+                   f"El objetivo esperado a hoy es de **{objetivo_a_la_fecha:.1f} paños**.\n\n"
+                   f"👉 Llevamos **{panos_est_prop:.1f}** paños, lo que representa un **{cumplimiento_fecha_pct:.1f}%** de cumplimiento a la fecha.")
             
-        st.write("### 💰 Rendimiento y Proyección al Cierre (Producción Interna)")
-        c_r1, c_r2, c_r3 = st.columns(3)
-        c_r1.markdown(f'<div class="metric-card" style="border-left: 5px solid #28a745;"><div class="metric-title" style="color: #28a745;">Facturado Actual (FAC)</div><div class="metric-value-money" style="color: #28a745;">{formato_pesos(pesos_fac)}</div><div class="metric-subtitle-gray" style="font-size: 1.1rem; margin-top: 8px;">📦 {panos_fac_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
-        c_r2.markdown(f'<div class="metric-card" style="border-left: 5px solid #17a2b8;"><div class="metric-title" style="color: #17a2b8;">Aprobado (SI)</div><div class="metric-value-money" style="color:#17a2b8;">{formato_pesos(pesos_si)}</div><div class="metric-subtitle-green" style="font-size: 1.1rem; color: #17a2b8; margin-top: 8px;">📦 {panos_si_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
-        c_r3.markdown(f'<div class="metric-card" style="border-left: 5px solid #00235d;"><div class="metric-title" style="color:#00235d;">Estimado a Cierre de Mes</div><div class="metric-value-money" style="color:#00235d;">{formato_pesos(pesos_est)}</div><div class="metric-subtitle-gray" style="font-size: 1.1rem; color:#00235d; font-weight: bold; margin-top: 8px;">📦 {panos_est_prop:.1f} paños propios</div></div>', unsafe_allow_html=True)
+        st.info(f"⏱️ **Termómetro de Ritmo:** Faltan **{panos_faltantes:.1f} paños propios** y quedan **{dias_restantes} días hábiles**. "
+                f"Para llegar a la meta a fin de mes, el taller debe sacar **{ritmo_diario_necesario:.1f} paños por día**.")
 
         # ==========================================
         # --- GESTIÓN DE TERCEROS Y GRAN TOTAL ---
