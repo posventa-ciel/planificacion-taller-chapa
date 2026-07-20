@@ -141,7 +141,7 @@ def clasificar_abc(panos):
     else: return 'C (8+ paños)'
 
 def obtener_proxima_fecha_libre(dias_carga):
-    fecha = datetime.today()
+    fecha = datetime.datetime.today()
     dias_agregados = 0
     while dias_agregados < int(dias_carga):
         fecha += timedelta(days=1)
