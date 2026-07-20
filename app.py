@@ -433,6 +433,9 @@ with st.sidebar:
 # Feriados de Argentina 2026 (puedes agregar más separados por coma)
 FERIADOS = ['2026-07-09']
 
+# Aseguramos tener la fecha de hoy definida
+hoy = datetime.date.today()
+
 # --- APLICAR FILTRO MENSUSAL GLOBAL A MAESTRO ---
 if mes_filtro != "TODOS":
     df = df[(df['Mes_Hist'] == mes_filtro) | (df['Mes_Hist'] == 'SIN FECHA')]
@@ -443,12 +446,14 @@ else:
 # 1. Calcular días hábiles totales del mes (con feriados)
 primer_dia_mes = datetime.date(año_filtro, mes_num_filtro, 1)
 ultimo_dia_mes = datetime.date(año_filtro, mes_num_filtro, calendar.monthrange(año_filtro, mes_num_filtro)[1])
-DIAS_HABILES_MES = int(np.busday_count(primer_dia_mes, ultimo_dia_mes + datetime.timedelta(days=1), holidays=FERIADOS))
+
+# Usamos str() para que numpy lea las fechas como texto y no tire error de tipo
+DIAS_HABILES_MES = int(np.busday_count(str(primer_dia_mes), str(ultimo_dia_mes + datetime.timedelta(days=1)), holidays=FERIADOS))
 
 # 2. Calcular días restantes dependiendo de si miramos el mes actual o uno pasado
 if año_filtro == hoy.year and mes_num_filtro == hoy.month:
-    # Calculamos días transcurridos hasta ayer (excluye hoy para que dé exactamente los 12 días)
-    dias_transcurridos_calc = int(np.busday_count(primer_dia_mes, hoy, holidays=FERIADOS))
+    # Calculamos días transcurridos hasta ayer
+    dias_transcurridos_calc = int(np.busday_count(str(primer_dia_mes), str(hoy), holidays=FERIADOS))
     dias_restantes_calc = max(0, DIAS_HABILES_MES - dias_transcurridos_calc)
 elif datetime.date(año_filtro, mes_num_filtro, 1) < hoy.replace(day=1):
     # Si estamos filtrando un mes que ya pasó, los días restantes son cero
