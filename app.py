@@ -380,7 +380,7 @@ df = obtener_datos_maestros()
 df_turnos_display = st.session_state.memoria_turnos_v12.copy()
 df_completo = df.copy() 
 
-hoy = datetime.today()
+hoy = datetime.datetime.today()
 hoy_ym = hoy.strftime('%Y-%m')
 
 # --- BARRA LATERAL (SIDEBAR) Y BUSCADOR ---
