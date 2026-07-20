@@ -550,11 +550,11 @@ with tab_turnos:
             ultimo_dia = date(año_filtro, mes_num_filtro, ult_dia_int)
             
             if mes_seleccionado_label == "🗓️ MES ACTUAL":
-                rango_default = (hoy.date(), hoy.date()) 
+                rango_default = (hoy, hoy) 
             else:
                 rango_default = (primer_dia, ultimo_dia) 
         else:
-            rango_default = (hoy.date(), hoy.date())
+            rango_default = (hoy, hoy)
             
         fechas_seleccionadas = st.date_input("📅 Rango de Fechas", value=rango_default, format="DD/MM/YYYY")
         if isinstance(fechas_seleccionadas, tuple):
