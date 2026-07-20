@@ -63,7 +63,7 @@ formato_pesos = lambda x: f"$ {x:,.0f}".replace(',', '.')
 formato_panos = lambda x: f"{x:.1f}"
 
 # --- LÓGICA DE DÍAS HÁBILES ---
-anio_actual = datetime.now().year
+anio_actual = datetime.datetime.now().year
 FERIADOS_ARG = [
     date(anio_actual, 3, 24), # Día de la Memoria
     date(anio_actual, 4, 2),  # Día de Malvinas / Jueves Santo
