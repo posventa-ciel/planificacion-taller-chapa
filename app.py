@@ -311,7 +311,7 @@ def obtener_datos_maestros():
     for _, row in df_raw.iterrows():
         f_fin = parsear_fecha_español(row.get('FECHA_PROMESA_I', ''))
         f_fin_disp = f_fin.date() if f_fin else None
-        if not f_fin: f_fin = datetime.now() + timedelta(days=3650) 
+        if not f_fin: f_fin = datetime.datetime.now() + timedelta(days=3650) 
         
         mes_hist = f_fin.strftime('%Y-%m') if f_fin.year < 2030 else "SIN FECHA"
         if row.get('GRUPO_ORIGEN') in ['PARABRISAS', 'TERCEROS']:
