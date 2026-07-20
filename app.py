@@ -428,18 +428,39 @@ with st.sidebar:
         st.success("¡Datos actualizados y memoria limpia!"); time.sleep(0.5); st.rerun()
     st.caption("Datos extraídos de Google Sheets.")
 
+import numpy as np
+import datetime
+import calendar
+
+# Feriados de Argentina 2026 (puedes agregar más separados por coma)
+FERIADOS = ['2026-07-09']
+
 # --- APLICAR FILTRO MENSUSAL GLOBAL A MAESTRO ---
 if mes_filtro != "TODOS":
     df = df[(df['Mes_Hist'] == mes_filtro) | (df['Mes_Hist'] == 'SIN FECHA')]
     año_filtro, mes_num_filtro = map(int, mes_filtro.split('-'))
-    DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
 else:
     año_filtro, mes_num_filtro = hoy.year, hoy.month
-    DIAS_HABILES_MES = dias_habiles_del_mes(año_filtro, mes_num_filtro)
 
-CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES
+# 1. Calcular días hábiles totales del mes (con feriados)
+primer_dia_mes = datetime.date(año_filtro, mes_num_filtro, 1)
+ultimo_dia_mes = datetime.date(año_filtro, mes_num_filtro, calendar.monthrange(año_filtro, mes_num_filtro)[1])
+DIAS_HABILES_MES = int(np.busday_count(primer_dia_mes, ultimo_dia_mes + datetime.timedelta(days=1), holidays=FERIADOS))
+
+# 2. Calcular días restantes dependiendo de si miramos el mes actual o uno pasado
+if año_filtro == hoy.year and mes_num_filtro == hoy.month:
+    # Calculamos días transcurridos hasta ayer (excluye hoy para que dé exactamente los 12 días)
+    dias_transcurridos_calc = int(np.busday_count(primer_dia_mes, hoy, holidays=FERIADOS))
+    dias_restantes_calc = max(0, DIAS_HABILES_MES - dias_transcurridos_calc)
+elif datetime.date(año_filtro, mes_num_filtro, 1) < hoy.replace(day=1):
+    # Si estamos filtrando un mes que ya pasó, los días restantes son cero
+    dias_restantes_calc = 0
+else:
+    # Si por alguna razón filtramos un mes futuro
+    dias_restantes_calc = DIAS_HABILES_MES
+
+CAPACIDAD_DIARIA_TALLER = OBJETIVO_MENSUAL_PANOS / DIAS_HABILES_MES if DIAS_HABILES_MES > 0 else 0
 CAPACIDAD_DIARIA_GRUPO = CAPACIDAD_DIARIA_TALLER / 2
-dias_restantes_calc = dias_habiles_restantes_mes(año_filtro, mes_num_filtro)
 
 # --- APLICAR BUSCADOR GLOBAL ---
 if busqueda_global:
