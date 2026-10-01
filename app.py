@@ -1313,16 +1313,29 @@ with tab_fac:
         # ==========================================
         st.divider()
         st.markdown("<h3 style='margin-top: -15px;'>🤝 Gestión Financiera de Terceros</h3>", unsafe_allow_html=True)
-        
-        df_ter_fac = df_terceros[df_terceros['Estado_Resumen'] == 'Facturado (FAC)']
-        df_ter_si = df_terceros[df_terceros['Estado_Resumen'] == 'Aprobado (SI)']
-        
+
+        # --- FILTRO DE FECHA PARA TERCEROS ---
+        df_terceros_mes = df_terceros.copy()
+
+        # Si no están viendo "TODOS", filtramos para que coincida exacto con el mes en análisis
+        if 'mes_filtro' in locals() and mes_filtro != "TODOS":
+            if 'Fecha_Promesa_Disp' in df_terceros_mes.columns:
+                # Convertimos a formato datetime (coercing errores por si hay celdas vacías)
+                fechas_t = pd.to_datetime(df_terceros_mes['Fecha_Promesa_Disp'], errors='coerce')
+                # Filtramos por mes y año seleccionado en la app
+                df_terceros_mes = df_terceros_mes[(fechas_t.dt.month == mes_num_filtro) & (fechas_t.dt.year == año_filtro)]
+        # -------------------------------------------
+
+        # Filtramos estados ('FAC' o 'SI') pero ahora usando el DataFrame ya recortado por mes
+        df_ter_fac = df_terceros_mes[df_terceros_mes['Estado_Resumen'] == 'Facturado (FAC)']
+        df_ter_si = df_terceros_mes[df_terceros_mes['Estado_Resumen'] == 'Aprobado (SI)']
+
         v_fac_ter = df_ter_fac['Precio'].sum()
         v_si_ter = df_ter_si['Precio'].sum()
-        
+
         c_fac_ter = df_ter_fac['Costo'].sum()
         c_si_ter = df_ter_si['Costo'].sum()
-        
+
         p_fac_ter = df_ter_fac['Paños'].sum()
         p_si_ter = df_ter_si['Paños'].sum()
 
@@ -1330,7 +1343,7 @@ with tab_fac:
         tot_ter_costo = c_fac_ter + c_si_ter
         tot_ter_margen = tot_ter_fac - tot_ter_costo
         tot_ter_panos = p_fac_ter + p_si_ter
-        
+
         if tot_ter_fac > 0 or tot_ter_panos > 0:
             c_t1, c_t2, c_t3, c_t4 = st.columns(4)
             c_t1.markdown(f'''
@@ -1365,8 +1378,8 @@ with tab_fac:
                 </div>
             ''', unsafe_allow_html=True)
         else:
-            st.info("No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
-            
+            st.info(f"No hay datos de Terceros en estado Facturado o Aprobado para el período seleccionado.")
+
         # 📈 EL GRAN TOTAL DE PAÑOS 📈
         gran_total_panos = panos_est_prop + tot_ter_panos
         st.markdown(f"<div style='text-align: right; color: #00235d; font-size: 1.1rem; margin-top: 5px; margin-bottom: -10px;'><strong>📈 Gran Total de Producción (Propios + Terceros):</strong> {gran_total_panos:.1f} paños</div>", unsafe_allow_html=True)
