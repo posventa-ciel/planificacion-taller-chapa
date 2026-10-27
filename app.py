@@ -1291,8 +1291,15 @@ with tab_fac:
         <div style="background-color: #f8f9fa; border-left: 5px solid {color_desvio}; padding: 15px; border-radius: 5px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h4 style="margin:0; color:#00235d;">📊 Avance vs. Días Transcurridos</h4>
-                    <p style="margin:0; font-size:0.95rem; color:#666;">Días hábiles liquidados: <strong>{dias_transcurridos} de {dias_totales_mes}</strong></p>
+                    <h4 style="margin:0 0 8px 0; color:#00235d;">📊 Avance vs. Días Transcurridos</h4>
+                    <p style="margin:0 0 3px 0; font-size:0.95rem; color:#666;">
+                        ⏳ Tiempo transcurrido: <strong>{dias_transcurridos} de {dias_totales_mes} días</strong> 
+                        <span style="color: #00235d; font-weight: bold;">({porcentaje_tiempo:.1f}%)</span>
+                    </p>
+                    <p style="margin:0; font-size:0.95rem; color:#666;">
+                        🎯 Avance en paños: <strong>{panos_est_prop:.1f} de {OBJETIVO_MENSUAL_PANOS}</strong> 
+                        <span style="color: {color_desvio}; font-weight: bold;">({porcentaje_logro:.1f}%)</span>
+                    </p>
                 </div>
                 <div style="text-align: right;">
                     <h5 style="margin:0; color:#666; font-size: 0.9rem;">Objetivo a hoy: {panos_esperados_a_hoy:.1f} paños</h5>
