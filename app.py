@@ -1271,10 +1271,23 @@ with tab_fac:
         panos_esperados_a_hoy = ritmo_ideal_diario * dias_transcurridos
         desvio_panos = panos_est_prop - panos_esperados_a_hoy
         
-        color_desvio = "#28a745" if desvio_panos >= 0 else "#dc3545"
-        texto_desvio = f"🟢 Vas {abs(desvio_panos):.1f} paños ADELANTADO" if desvio_panos >= 0 else f"🔴 Vas {abs(desvio_panos):.1f} paños ATRASADO"
+        # Cálculos de porcentajes
         porcentaje_tiempo = (dias_transcurridos / dias_totales_mes) * 100 if dias_totales_mes > 0 else 0
         porcentaje_avance_real = (panos_est_prop / panos_esperados_a_hoy) * 100 if panos_esperados_a_hoy > 0 else 0
+        
+        # --- Lógica de colores con 3 niveles ---
+        if porcentaje_avance_real >= 95:
+            color_desvio = "#28a745" # Verde
+            icono_desvio = "🟢"
+        elif porcentaje_avance_real >= 90:
+            color_desvio = "#d39e00" # Amarillo oscuro (se usa un tono mostaza para que sea legible sobre fondo blanco)
+            icono_desvio = "🟡"
+        else:
+            color_desvio = "#dc3545" # Rojo
+            icono_desvio = "🔴"
+            
+        estado_txt = "ADELANTADO" if desvio_panos >= 0 else "ATRASADO"
+        texto_desvio = f"{icono_desvio} Vas {abs(desvio_panos):.1f} paños {estado_txt}"
         
         st.markdown("### 🎯 Control de Objetivo Mensual")
         c_obj1, c_obj2 = st.columns([3, 1])
