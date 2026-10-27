@@ -1273,6 +1273,7 @@ with tab_fac:
         
         color_desvio = "#28a745" if desvio_panos >= 0 else "#dc3545"
         texto_desvio = f"🟢 Vas {abs(desvio_panos):.1f} paños ADELANTADO" if desvio_panos >= 0 else f"🔴 Vas {abs(desvio_panos):.1f} paños ATRASADO"
+        porcentaje_tiempo = (dias_transcurridos / dias_totales_mes) * 100 if dias_totales_mes > 0 else 0
         
         st.markdown("### 🎯 Control de Objetivo Mensual")
         c_obj1, c_obj2 = st.columns([3, 1])
