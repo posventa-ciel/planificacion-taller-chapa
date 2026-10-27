@@ -1298,8 +1298,8 @@ with tab_fac:
                         <span style="color: #00235d; font-weight: bold;">({porcentaje_tiempo:.1f}%)</span>
                     </p>
                     <p style="margin:0; font-size:0.95rem; color:#666;">
-                        🎯 Avance en paños: <strong>{panos_est_prop:.1f} de {OBJETIVO_MENSUAL_PANOS}</strong> 
-                        <span style="color: {color_desvio}; font-weight: bold;">({porcentaje_logro:.1f}%)</span>
+                        🎯 Paños logrados vs esperados: <strong>{panos_est_prop:.1f} de {panos_esperados_a_hoy:.1f}</strong> 
+                        <span style="color: {color_desvio}; font-weight: bold;">({porcentaje_avance_real:.1f}%)</span>
                     </p>
                 </div>
                 <div style="text-align: right;">
