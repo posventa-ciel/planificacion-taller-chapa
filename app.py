@@ -1979,10 +1979,61 @@ with tab_hist:
             
             st.divider()
 
-            # --- SECCIÓN 3: EVOLUCIÓN DETALLADA POR CANAL ---
+            # --- SECCIÓN 3: EVOLUCIÓN DETALLADA POR CANAL Y ALERTAS ---
             st.markdown("#### 📈 Evolución y Tendencias por Canal")
             
             df_mes_unidad = df_hist.groupby(['Mes_Hist', 'Unidad_Negocio'])['Paños'].sum().reset_index()
+            df_mes_tipo = df_hist.groupby(['Mes_Hist', 'Tipo_Cliente'])['Paños'].sum().reset_index()
+            
+            # --- 🤖 MOTOR DE INSIGHTS Y ALERTAS AUTOMÁTICAS ---
+            def generar_insights(df_data, col_cat):
+                pivot = df_data.pivot(index='Mes_Hist', columns=col_cat, values='Paños').fillna(0)
+                if len(pivot) < 2: return "Sin datos", []
+                
+                # Detectar si el último mes está en curso/incompleto (si la suma total cayó más de un 60%)
+                if pivot.iloc[-1].sum() < (pivot.iloc[-2].sum() * 0.4) and len(pivot) >= 3:
+                    pivot = pivot.iloc[:-1] # Recortamos el mes incompleto para el análisis
+                
+                mes_analisis = pivot.index[-1]
+                alertas = []
+                
+                for cat in pivot.columns:
+                    val_actual = pivot[cat].iloc[-1]
+                    
+                    # Calcular el promedio de los 3 meses anteriores al mes de análisis
+                    if len(pivot) >= 4:
+                        prom_trim = pivot[cat].iloc[-4:-1].mean()
+                    elif len(pivot) >= 2:
+                        prom_trim = pivot[cat].iloc[-2]
+                    else:
+                        prom_trim = 0
+                        
+                    # Solo disparamos alertas si el canal mueve volumen relevante (> 5 paños promedio)
+                    if prom_trim > 5: 
+                        var = ((val_actual - prom_trim) / prom_trim) * 100
+                        if var <= -15:
+                            alertas.append(f"📉 **{cat}**: Bajó **{abs(var):.0f}%** (Promedio trimestral: {prom_trim:.0f} paños ➔ {mes_analisis}: {val_actual:.0f} paños)")
+                        elif var >= 15:
+                            alertas.append(f"📈 **{cat}**: Subió **{var:.0f}%** (Promedio trimestral: {prom_trim:.0f} paños ➔ {mes_analisis}: {val_actual:.0f} paños)")
+                
+                return mes_analisis, alertas
+
+            mes_ref_u, alertas_u = generar_insights(df_mes_unidad, 'Unidad_Negocio')
+            mes_ref_t, alertas_t = generar_insights(df_mes_tipo, 'Tipo_Cliente')
+            
+            todas_alertas = alertas_u + alertas_t
+            
+            if todas_alertas:
+                with st.expander(f"💡 Alertas Automáticas de Tendencia (Análisis de {mes_ref_u} vs. Trimestre Anterior)", expanded=True):
+                    for a in todas_alertas:
+                        if "Bajó" in a: st.error(a)
+                        else: st.success(a)
+            else:
+                st.info(f"Tendencias estables en {mes_ref_u} (sin variaciones mayores al 15% vs trimestre anterior).")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # --- GRÁFICOS ---
             fig_bar_unidad = px.bar(df_mes_unidad, x='Mes_Hist', y='Paños', color='Unidad_Negocio', barmode='group',
                                     title="Evolución de Paños por Unidad de Negocio (Empresas)")
             fig_bar_unidad.update_layout(xaxis_title="Mes", yaxis_title="Paños", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
@@ -1990,7 +2041,6 @@ with tab_hist:
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            df_mes_tipo = df_hist.groupby(['Mes_Hist', 'Tipo_Cliente'])['Paños'].sum().reset_index()
             fig_line_tipo = px.line(df_mes_tipo, x='Mes_Hist', y='Paños', color='Tipo_Cliente', markers=True,
                                     title="Tendencia de Comportamiento por Tipo de Cliente (Seguros, Particulares, Internos)")
             fig_line_tipo.update_traces(line=dict(width=3), marker=dict(size=8))
