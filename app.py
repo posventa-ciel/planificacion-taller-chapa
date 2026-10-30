@@ -1849,100 +1849,95 @@ with tab_kpi:
 # ==========================================
 with tab_hist:
     if not df_completo.empty: 
-        st.subheader("📅 Histórico Mensual y Tendencias de Ingreso")
+        st.subheader("📊 Dashboard Histórico y Evolución de Negocio")
         df_hist = df_completo[df_completo['Mes_Hist'] != 'SIN FECHA'].sort_values('Mes_Hist').copy()
         
         if not df_hist.empty:
             
-            # --- 1. LÓGICA DE CLASIFICACIÓN DE EMPRESAS Y SEGUROS ---
-            # Identificamos las columnas correctas (por si se llaman Empresa o Cliente)
+            # --- 1. LÓGICA DE CLASIFICACIÓN (MACRO Y MICRO) ---
             col_emp = 'Cliente' if 'Cliente' in df_hist.columns else 'Empresa' if 'Empresa' in df_hist.columns else 'EMPRESA'
             col_seg = 'Seguro' if 'Seguro' in df_hist.columns else 'SEGURO'
-            
-            # Verificamos si la columna Seguro existe, si no, la creamos vacía temporalmente para evitar errores
-            if col_seg not in df_hist.columns:
-                df_hist[col_seg] = ""
+            if col_seg not in df_hist.columns: df_hist[col_seg] = ""
 
-            def clasificar_canal_principal(row):
+            def clasificar_unidad_negocio(row):
+                emp = str(row.get(col_emp, '')).strip().upper()
+                if 'AUTOLUX' in emp: return 'AUTOLUX'
+                if 'AUTOSOL' in emp: return 'AUTOSOL'
+                if 'CIEL' in emp: return 'AUTOCIEL'
+                if 'CENOA' in emp: return 'TALLER CENOA'
+                return 'OTROS'
+
+            def clasificar_tipo_cliente(row):
                 emp = str(row.get(col_emp, '')).strip().upper()
                 seg = str(row.get(col_seg, '')).strip().upper()
                 if seg in ['NAN', 'NONE', 'NAT']: seg = ''
                 
-                # Regla de CENOA
-                if emp == 'CENOA':
-                    return 'CENOA (Cliente Final)' if seg == '' else seg
-                # Regla para el resto (Autolux, Autosol, Ciel, etc.)
-                return emp
-
-            def clasificar_detalle_seguro(row):
-                emp = str(row.get(col_emp, '')).strip().upper()
-                seg = str(row.get(col_seg, '')).strip().upper()
-                if seg in ['NAN', 'NONE', 'NAT']: seg = ''
-                
-                if emp == 'CENOA':
-                    return 'CENOA (Cliente Final)' if seg == '' else seg
-                else:
-                    return f"{emp} ({seg})" if seg != '' else emp
+                if '0KM' in emp or 'OKM' in emp: return 'CLIENTE INTERNO (0KM)'
+                if 'USADO' in emp: return 'CLIENTE INTERNO (USADOS)'
+                if 'SEGURO' in emp or seg != '': return 'CLIENTE SEGURO'
+                return 'CLIENTE PARTICULAR'
 
             # Aplicamos la clasificación
-            df_hist['Canal_Principal'] = df_hist.apply(clasificar_canal_principal, axis=1)
-            df_hist['Canal_Detalle'] = df_hist.apply(clasificar_detalle_seguro, axis=1)
+            df_hist['Unidad_Negocio'] = df_hist.apply(clasificar_unidad_negocio, axis=1)
+            df_hist['Tipo_Cliente'] = df_hist.apply(clasificar_tipo_cliente, axis=1)
 
-            # --- 2. RESUMEN GLOBAL POR CANAL PRINCIPAL ---
-            st.markdown("#### 1️⃣ Resumen por Origen de Trabajo (Canal Principal)")
-            st.write("Agrupa Retail (CENOA final), unidades directas (FADUA/FIANNI) y las Derivaciones de Concesionarios.")
+            # --- SECCIÓN 1: EVOLUCIÓN GENERAL MES A MES ---
+            st.markdown("#### 1️⃣ Evolución General del Taller (Mes a Mes)")
+            df_mes = df_hist.groupby('Mes_Hist').agg({'Paños': 'sum', 'Precio': 'sum'}).reset_index()
             
-            c_h1, c_h2 = st.columns(2)
-            with c_h1:
-                st.markdown("**📦 Evolución de Paños**")
-                pivot_panos = pd.pivot_table(df_hist, values='Paños', index='Mes_Hist', columns='Canal_Principal', aggfunc='sum', fill_value=0)
-                st.dataframe(pivot_panos.style.format("{:.1f}"), use_container_width=True)
-            with c_h2:
-                st.markdown("**💰 Evolución de Facturación / Aprobados ($)**")
-                pivot_pesos = pd.pivot_table(df_hist, values='Precio', index='Mes_Hist', columns='Canal_Principal', aggfunc='sum', fill_value=0)
-                st.dataframe(pivot_pesos.style.format(lambda x: f"$ {x:,.0f}".replace(',', '.')), use_container_width=True)
-            
+            c_g1, c_g2 = st.columns(2)
+            with c_g1:
+                fig_panos_tot = px.bar(df_mes, x='Mes_Hist', y='Paños', text_auto='.1f', title='📦 Evolución Histórica de Paños')
+                fig_panos_tot.update_traces(marker_color='#00235d')
+                fig_panos_tot.update_layout(xaxis_title="", yaxis_title="Paños")
+                st.plotly_chart(fig_panos_tot, use_container_width=True)
+            with c_g2:
+                fig_plata_tot = px.bar(df_mes, x='Mes_Hist', y='Precio', text_auto='$.3s', title='💰 Evolución Histórica de Facturación')
+                fig_plata_tot.update_traces(marker_color='#28a745')
+                fig_plata_tot.update_layout(xaxis_title="", yaxis_title="Monto ($)")
+                st.plotly_chart(fig_plata_tot, use_container_width=True)
+                
             st.divider()
+
+            # --- SECCIÓN 2: ACUMULADO MACRO Y MICRO (GRÁFICOS DE TORTA) ---
+            st.markdown("#### 2️⃣ Distribución Acumulada del Año")
+            c_p1, c_p2 = st.columns(2)
             
-            # --- 3. GRÁFICOS DE TENDENCIA (LÍNEAS Y BARRAS) ---
-            st.markdown("#### 📈 Comportamiento y Tendencias (Medido en Paños)")
+            with c_p1:
+                df_unidad_pie = df_hist.groupby('Unidad_Negocio')['Paños'].sum().reset_index()
+                fig_pie_macro = px.pie(df_unidad_pie, values='Paños', names='Unidad_Negocio', hole=0.4, 
+                                       title="Macronivel: Paños por Unidad de Negocio")
+                fig_pie_macro.update_traces(textposition='inside', textinfo='percent+label')
+                fig_pie_macro.update_layout(showlegend=False)
+                st.plotly_chart(fig_pie_macro, use_container_width=True)
+                
+            with c_p2:
+                df_tipo_pie = df_hist.groupby('Tipo_Cliente')['Paños'].sum().reset_index()
+                fig_pie_micro = px.pie(df_tipo_pie, values='Paños', names='Tipo_Cliente', hole=0.4, 
+                                       title="Micronivel: Paños por Tipo de Cliente")
+                fig_pie_micro.update_traces(textposition='inside', textinfo='percent+label')
+                fig_pie_micro.update_layout(showlegend=False)
+                st.plotly_chart(fig_pie_micro, use_container_width=True)
+
+            st.divider()
+
+            # --- SECCIÓN 3: EVOLUCIÓN DETALLADA POR CANAL ---
+            st.markdown("#### 3️⃣ Evolución y Tendencias por Canal")
             
-            # Preparamos datos para los gráficos
-            df_graficos = df_hist.groupby(['Mes_Hist', 'Canal_Principal'])['Paños'].sum().reset_index()
-            
-            # 1er Gráfico a ancho completo
-            fig_line = px.line(
-                df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", markers=True,
-                title="Curva de Tendencia por Origen (Líneas)"
-            )
-            # Mandamos la leyenda abajo para que no coma espacio lateral
-            fig_line.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
-            st.plotly_chart(fig_line, use_container_width=True)
+            df_mes_unidad = df_hist.groupby(['Mes_Hist', 'Unidad_Negocio'])['Paños'].sum().reset_index()
+            fig_bar_unidad = px.bar(df_mes_unidad, x='Mes_Hist', y='Paños', color='Unidad_Negocio', barmode='group',
+                                    title="Evolución de Paños por Unidad de Negocio (Empresas)")
+            fig_bar_unidad.update_layout(xaxis_title="Mes", yaxis_title="Paños", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+            st.plotly_chart(fig_bar_unidad, use_container_width=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # 2do Gráfico a ancho completo
-            fig_bar = px.bar(
-                df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", barmode="stack",
-                title="Composición del Volumen Total Mensual"
-            )
-            fig_bar.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-            st.divider()
-
-            # --- 4. DESGLOSE PROFUNDO POR ASEGURADORA ---
-            st.markdown("#### 2️⃣ Desglose Profundo por Aseguradora (Derivados)")
-            st.write("Análisis minucioso del comportamiento de cada aseguradora dentro de las empresas (Ej: AUTOLUX SEGURO -> LA CAJA).")
-            
-            # Tabla dinámica usando Canal_Detalle
-            pivot_detalle = pd.pivot_table(df_hist, values='Paños', index='Mes_Hist', columns='Canal_Detalle', aggfunc='sum', fill_value=0)
-            
-            # Mostramos la tabla limpia sin el gradiente que causaba el error
-            st.dataframe(
-                pivot_detalle.style.format("{:.1f}"), 
-                use_container_width=True
-            )
+            df_mes_tipo = df_hist.groupby(['Mes_Hist', 'Tipo_Cliente'])['Paños'].sum().reset_index()
+            fig_line_tipo = px.line(df_mes_tipo, x='Mes_Hist', y='Paños', color='Tipo_Cliente', markers=True,
+                                    title="Tendencia de Comportamiento por Tipo de Cliente (Seguros, Particulares, Internos)")
+            fig_line_tipo.update_traces(line=dict(width=3), marker=dict(size=8))
+            fig_line_tipo.update_layout(xaxis_title="Mes", yaxis_title="Paños", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+            st.plotly_chart(fig_line_tipo, use_container_width=True)
             
         else: 
             st.info("No hay datos con fechas válidas para mostrar el historial.")
