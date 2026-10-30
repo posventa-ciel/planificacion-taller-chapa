@@ -1938,9 +1938,9 @@ with tab_hist:
             # Tabla dinámica usando Canal_Detalle
             pivot_detalle = pd.pivot_table(df_hist, values='Paños', index='Mes_Hist', columns='Canal_Detalle', aggfunc='sum', fill_value=0)
             
-            # Mostramos la tabla con un mapa de calor (gradient) para detectar rápidamente los meses pico de cada seguro
+            # Mostramos la tabla limpia sin el gradiente que causaba el error
             st.dataframe(
-                pivot_detalle.style.format("{:.1f}").background_gradient(cmap='Blues', axis=0), 
+                pivot_detalle.style.format("{:.1f}"), 
                 use_container_width=True
             )
             
