@@ -1845,20 +1845,104 @@ with tab_kpi:
             st.warning("No hay suficientes datos válidos (con paños y precios mayores a cero) para calcular los KPIs de rendimiento.")
             
 # ==========================================
-# PESTAÑA 6: HISTÓRICOS
+# PESTAÑA 6: HISTÓRICOS Y TENDENCIAS
 # ==========================================
 with tab_hist:
     if not df_completo.empty: 
-        st.subheader("📅 Histórico Mensual")
-        df_hist = df_completo[df_completo['Mes_Hist'] != 'SIN FECHA'].sort_values('Mes_Hist')
+        st.subheader("📅 Histórico Mensual y Tendencias de Ingreso")
+        df_hist = df_completo[df_completo['Mes_Hist'] != 'SIN FECHA'].sort_values('Mes_Hist').copy()
+        
         if not df_hist.empty:
+            
+            # --- 1. LÓGICA DE CLASIFICACIÓN DE EMPRESAS Y SEGUROS ---
+            # Identificamos las columnas correctas (por si se llaman Empresa o Cliente)
+            col_emp = 'Cliente' if 'Cliente' in df_hist.columns else 'Empresa' if 'Empresa' in df_hist.columns else 'EMPRESA'
+            col_seg = 'Seguro' if 'Seguro' in df_hist.columns else 'SEGURO'
+            
+            # Verificamos si la columna Seguro existe, si no, la creamos vacía temporalmente para evitar errores
+            if col_seg not in df_hist.columns:
+                df_hist[col_seg] = ""
+
+            def clasificar_canal_principal(row):
+                emp = str(row.get(col_emp, '')).strip().upper()
+                seg = str(row.get(col_seg, '')).strip().upper()
+                if seg in ['NAN', 'NONE', 'NAT']: seg = ''
+                
+                # Regla de CENOA
+                if emp == 'CENOA':
+                    return 'CENOA (Cliente Final)' if seg == '' else seg
+                # Regla para el resto (Autolux, Autosol, Ciel, etc.)
+                return emp
+
+            def clasificar_detalle_seguro(row):
+                emp = str(row.get(col_emp, '')).strip().upper()
+                seg = str(row.get(col_seg, '')).strip().upper()
+                if seg in ['NAN', 'NONE', 'NAT']: seg = ''
+                
+                if emp == 'CENOA':
+                    return 'CENOA (Cliente Final)' if seg == '' else seg
+                else:
+                    return f"{emp} ({seg})" if seg != '' else emp
+
+            # Aplicamos la clasificación
+            df_hist['Canal_Principal'] = df_hist.apply(clasificar_canal_principal, axis=1)
+            df_hist['Canal_Detalle'] = df_hist.apply(clasificar_detalle_seguro, axis=1)
+
+            # --- 2. RESUMEN GLOBAL POR CANAL PRINCIPAL ---
+            st.markdown("#### 1️⃣ Resumen por Origen de Trabajo (Canal Principal)")
+            st.write("Agrupa Retail (CENOA final), unidades directas (FADUA/FIANNI) y las Derivaciones de Concesionarios.")
+            
             c_h1, c_h2 = st.columns(2)
             with c_h1:
-                pivot_panos = pd.pivot_table(df_hist, values='Paños', index='Mes_Hist', columns='Cliente', aggfunc='sum', fill_value=0)
+                st.markdown("**📦 Evolución de Paños**")
+                pivot_panos = pd.pivot_table(df_hist, values='Paños', index='Mes_Hist', columns='Canal_Principal', aggfunc='sum', fill_value=0)
                 st.dataframe(pivot_panos.style.format("{:.1f}"), use_container_width=True)
             with c_h2:
-                pivot_pesos = pd.pivot_table(df_hist, values='Precio', index='Mes_Hist', columns='Cliente', aggfunc='sum', fill_value=0)
+                st.markdown("**💰 Evolución de Facturación / Aprobados ($)**")
+                pivot_pesos = pd.pivot_table(df_hist, values='Precio', index='Mes_Hist', columns='Canal_Principal', aggfunc='sum', fill_value=0)
                 st.dataframe(pivot_pesos.style.format(lambda x: f"$ {x:,.0f}".replace(',', '.')), use_container_width=True)
+            
             st.divider()
-            st.plotly_chart(px.bar(df_hist, x="Mes_Hist", y="Paños", color="Cliente", barmode="group", title="Paños Facturados/Proyectados por Mes"), use_container_width=True)
-        else: st.info("No hay datos con fechas válidas para mostrar el historial.")
+            
+            # --- 3. GRÁFICOS DE TENDENCIA (LÍNEAS Y BARRAS) ---
+            st.markdown("#### 📈 Comportamiento y Tendencias (Medido en Paños)")
+            c_g1, c_g2 = st.columns(2)
+            
+            # Preparamos datos para los gráficos
+            df_graficos = df_hist.groupby(['Mes_Hist', 'Canal_Principal'])['Paños'].sum().reset_index()
+            
+            with c_g1:
+                # Gráfico de líneas: Ideal para ver qué seguro/empresa viene subiendo o bajando mes a mes
+                fig_line = px.line(
+                    df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", markers=True,
+                    title="Curva de Tendencia por Origen (Líneas)"
+                )
+                fig_line.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños")
+                st.plotly_chart(fig_line, use_container_width=True)
+                
+            with c_g2:
+                # Gráfico de barras apiladas: Ideal para ver el volumen total del taller y cómo se compone
+                fig_bar = px.bar(
+                    df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", barmode="stack",
+                    title="Composición del Volumen Total Mensual"
+                )
+                fig_bar.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños")
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+            st.divider()
+
+            # --- 4. DESGLOSE PROFUNDO POR ASEGURADORA ---
+            st.markdown("#### 2️⃣ Desglose Profundo por Aseguradora (Derivados)")
+            st.write("Análisis minucioso del comportamiento de cada aseguradora dentro de las empresas (Ej: AUTOLUX SEGURO -> LA CAJA).")
+            
+            # Tabla dinámica usando Canal_Detalle
+            pivot_detalle = pd.pivot_table(df_hist, values='Paños', index='Mes_Hist', columns='Canal_Detalle', aggfunc='sum', fill_value=0)
+            
+            # Mostramos la tabla con un mapa de calor (gradient) para detectar rápidamente los meses pico de cada seguro
+            st.dataframe(
+                pivot_detalle.style.format("{:.1f}").background_gradient(cmap='Blues', axis=0), 
+                use_container_width=True
+            )
+            
+        else: 
+            st.info("No hay datos con fechas válidas para mostrar el historial.")
