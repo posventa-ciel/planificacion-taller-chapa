@@ -1953,15 +1953,51 @@ with tab_hist:
             df_drill['Detalle_Interno'] = df_drill.apply(clasificar_detalle_interno, axis=1)
             df_drill_group = df_drill.groupby('Detalle_Interno')['Paños'].sum().reset_index().sort_values('Paños', ascending=False)
             
-            c_d1, c_d2 = st.columns([2, 1])
+            # --- NUEVA SECCIÓN: RADIOGRAFÍA INTERNA (DRILL-DOWN) ---
+            st.markdown("#### 🔍 Radiografía Interna por Unidad de Negocio")
+            
+            lista_empresas = df_hist['Unidad_Negocio'].unique().tolist()
+            if 'TALLER CENOA' in lista_empresas:
+                lista_empresas.insert(0, lista_empresas.pop(lista_empresas.index('TALLER CENOA')))
+                
+            empresa_seleccionada = st.selectbox("👇 Seleccioná una empresa para ver cómo se compone su volumen de paños:", lista_empresas)
+            
+            df_drill = df_hist[df_hist['Unidad_Negocio'] == empresa_seleccionada].copy()
+            
+            def clasificar_detalle_interno(row):
+                emp = str(row.get(col_emp, '')).strip().upper()
+                seg = str(row.get(col_seg, '')).strip().upper()
+                if seg in ['NAN', 'NONE', 'NAT']: seg = ''
+                
+                if emp == 'CENOA':
+                    if seg == '': return 'CLIENTE FINAL (Mostrador)'
+                    return f"CONVENIO: {seg}"
+                
+                if '0KM' in emp or 'OKM' in emp: return 'UNIDADES 0KM'
+                if 'USADO' in emp: return 'UNIDADES USADAS'
+                if 'SEGURO' in emp or seg != '': 
+                    return f"SEGURO: {seg}" if seg != '' else 'SEGURO (Sin especificar)'
+                    
+                return 'PARTICULAR / OTROS'
+
+            df_drill['Detalle_Interno'] = df_drill.apply(clasificar_detalle_interno, axis=1)
+            df_drill_group = df_drill.groupby('Detalle_Interno')['Paños'].sum().reset_index().sort_values('Paños', ascending=False)
+            
+            # Reemplazamos la tabla por dos gráficos limpios
+            c_d1, c_d2 = st.columns(2)
+            
             with c_d1:
-                fig_drill = px.bar(df_drill_group, x='Paños', y='Detalle_Interno', orientation='h', text_auto='.1f',
-                                   title=f"Composición exacta de {empresa_seleccionada}", color='Detalle_Interno')
-                fig_drill.update_layout(showlegend=False, yaxis_title="", xaxis_title="Cantidad de Paños")
-                st.plotly_chart(fig_drill, use_container_width=True)
+                fig_drill_pie = px.pie(df_drill_group, values='Paños', names='Detalle_Interno', hole=0.4,
+                                       title=f"Distribución (%) - {empresa_seleccionada}")
+                fig_drill_pie.update_traces(textposition='inside', textinfo='percent+label', insidetextorientation='horizontal')
+                fig_drill_pie.update_layout(showlegend=False)
+                st.plotly_chart(fig_drill_pie, use_container_width=True)
+                
             with c_d2:
-                st.markdown(f"<br><br><b>Resumen {empresa_seleccionada}</b>", unsafe_allow_html=True)
-                st.dataframe(df_drill_group.style.format({"Paños": "{:.1f}"}), hide_index=True, use_container_width=True)
+                fig_drill_bar = px.bar(df_drill_group, x='Detalle_Interno', y='Paños', text_auto='.1f',
+                                       title=f"Volumen (Paños) - {empresa_seleccionada}", color='Detalle_Interno')
+                fig_drill_bar.update_layout(showlegend=False, xaxis_title="", yaxis_title="Cantidad de Paños")
+                st.plotly_chart(fig_drill_bar, use_container_width=True)
             
             st.divider()
 
