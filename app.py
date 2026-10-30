@@ -1906,28 +1906,28 @@ with tab_hist:
             
             # --- 3. GRÁFICOS DE TENDENCIA (LÍNEAS Y BARRAS) ---
             st.markdown("#### 📈 Comportamiento y Tendencias (Medido en Paños)")
-            c_g1, c_g2 = st.columns(2)
             
             # Preparamos datos para los gráficos
             df_graficos = df_hist.groupby(['Mes_Hist', 'Canal_Principal'])['Paños'].sum().reset_index()
             
-            with c_g1:
-                # Gráfico de líneas: Ideal para ver qué seguro/empresa viene subiendo o bajando mes a mes
-                fig_line = px.line(
-                    df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", markers=True,
-                    title="Curva de Tendencia por Origen (Líneas)"
-                )
-                fig_line.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños")
-                st.plotly_chart(fig_line, use_container_width=True)
-                
-            with c_g2:
-                # Gráfico de barras apiladas: Ideal para ver el volumen total del taller y cómo se compone
-                fig_bar = px.bar(
-                    df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", barmode="stack",
-                    title="Composición del Volumen Total Mensual"
-                )
-                fig_bar.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños")
-                st.plotly_chart(fig_bar, use_container_width=True)
+            # 1er Gráfico a ancho completo
+            fig_line = px.line(
+                df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", markers=True,
+                title="Curva de Tendencia por Origen (Líneas)"
+            )
+            # Mandamos la leyenda abajo para que no coma espacio lateral
+            fig_line.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+            st.plotly_chart(fig_line, use_container_width=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 2do Gráfico a ancho completo
+            fig_bar = px.bar(
+                df_graficos, x="Mes_Hist", y="Paños", color="Canal_Principal", barmode="stack",
+                title="Composición del Volumen Total Mensual"
+            )
+            fig_bar.update_layout(xaxis_title="Mes", yaxis_title="Cantidad de Paños", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+            st.plotly_chart(fig_bar, use_container_width=True)
 
             st.divider()
 
