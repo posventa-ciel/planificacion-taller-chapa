@@ -1956,11 +1956,19 @@ with tab_hist:
             # --- NUEVA SECCIÓN: RADIOGRAFÍA INTERNA (DRILL-DOWN) ---
             st.markdown("#### 🔍 Radiografía Interna por Unidad de Negocio")
             
-            lista_empresas = df_hist['Unidad_Negocio'].unique().tolist()
+            # Limpiamos la lista: solo textos válidos y sin valores nulos
+            lista_empresas = [str(x) for x in df_hist['Unidad_Negocio'].unique() if pd.notna(x) and str(x).strip() != '']
+            
+            # Movemos TALLER CENOA al primer lugar de forma segura
             if 'TALLER CENOA' in lista_empresas:
-                lista_empresas.insert(0, lista_empresas.pop(lista_empresas.index('TALLER CENOA')))
+                lista_empresas.remove('TALLER CENOA')
+                lista_empresas.insert(0, 'TALLER CENOA')
                 
-            empresa_seleccionada = st.selectbox("👇 Seleccioná una empresa para ver cómo se compone su volumen de paños:", lista_empresas)
+            empresa_seleccionada = st.selectbox(
+                "👇 Seleccioná una empresa para ver cómo se compone su volumen de paños:", 
+                options=lista_empresas,
+                key="filtro_drilldown_hist"
+            )
             
             df_drill = df_hist[df_hist['Unidad_Negocio'] == empresa_seleccionada].copy()
             
