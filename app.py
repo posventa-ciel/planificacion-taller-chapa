@@ -1935,7 +1935,7 @@ with tab_hist:
                 lista_empresas.insert(0, 'TALLER CENOA')
                 
             empresa_seleccionada = st.selectbox(
-                "👇 Seleccioná una empresa para ver cómo se compone su volumen de paños:", 
+                "👇 Seleccioná una empresa para ver cómo se compone su volumen de paños y facturación:", 
                 options=lista_empresas,
                 key="filtro_drilldown_hist"
             )
@@ -1945,9 +1945,10 @@ with tab_hist:
             def clasificar_detalle_interno(row):
                 emp = str(row.get(col_emp, '')).strip().upper()
                 seg = str(row.get(col_seg, '')).strip().upper()
-                if seg in ['NAN', 'NONE', 'NAT']: seg = ''
+                # Filtramos cualquier basura de Excel que simule estar vacía
+                if seg in ['NAN', 'NONE', 'NAT', '0', '0.0']: seg = ''
                 
-                if emp == 'CENOA':
+                if 'CENOA' in emp:
                     if seg == '': return 'CLIENTE FINAL (Mostrador)'
                     return f"CONVENIO: {seg}"
                 
@@ -1959,14 +1960,24 @@ with tab_hist:
                 return 'PARTICULAR / OTROS'
 
             df_drill['Detalle_Interno'] = df_drill.apply(clasificar_detalle_interno, axis=1)
-            df_drill_group = df_drill.groupby('Detalle_Interno')['Paños'].sum().reset_index().sort_values('Paños', ascending=False)
             
-            # Reemplazamos la tabla por dos gráficos limpios
+            # Agrupamos sumando paños y precio (facturación)
+            df_drill_group = df_drill.groupby('Detalle_Interno').agg(
+                Paños=('Paños', 'sum'),
+                Facturacion=('Precio', 'sum')
+            ).reset_index().sort_values('Paños', ascending=False)
+            
+            # Calculamos meses activos para el promedio mensual
+            meses_activos = df_drill['Mes_Hist'].nunique()
+            if meses_activos == 0: meses_activos = 1
+            df_drill_group['Promedio_Mensual'] = df_drill_group['Facturacion'] / meses_activos
+            
+            # --- 1. Gráficos de Volumen ---
             c_d1, c_d2 = st.columns(2)
             
             with c_d1:
                 fig_drill_pie = px.pie(df_drill_group, values='Paños', names='Detalle_Interno', hole=0.4,
-                                       title=f"Distribución (%) - {empresa_seleccionada}")
+                                       title=f"Distribución de Paños (%) - {empresa_seleccionada}")
                 fig_drill_pie.update_traces(textposition='inside', textinfo='percent+label', insidetextorientation='horizontal')
                 fig_drill_pie.update_layout(showlegend=False)
                 st.plotly_chart(fig_drill_pie, use_container_width=True)
@@ -1976,6 +1987,22 @@ with tab_hist:
                                        title=f"Volumen (Paños) - {empresa_seleccionada}", color='Detalle_Interno')
                 fig_drill_bar.update_layout(showlegend=False, xaxis_title="", yaxis_title="Cantidad de Paños")
                 st.plotly_chart(fig_drill_bar, use_container_width=True)
+                
+            # --- 2. Tabla Financiera Detallada ---
+            st.markdown(f"#### 💰 Rendimiento Financiero: {empresa_seleccionada}")
+            st.write(f"Detalle de facturación acumulada y promedio mensual (calculado sobre {meses_activos} meses de actividad).")
+            
+            st.dataframe(
+                df_drill_group,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Detalle_Interno": st.column_config.TextColumn("Canal / Convenio", width="medium"),
+                    "Paños": st.column_config.NumberColumn("Paños Totales", format="%.1f"),
+                    "Facturacion": st.column_config.NumberColumn("Facturación Acumulada", format="$ %.0f"),
+                    "Promedio_Mensual": st.column_config.NumberColumn("Promedio Mensual", format="$ %.0f")
+                }
+            )
             
             st.divider()
 
